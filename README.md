@@ -1,5 +1,5 @@
 # Lateral
-Turtle WoW Rogue Slice and Dice tracker, vaguely inspired by EventHorizon.
+Turtle WoW Rogue Slice and Dice tracker, vaguely inspired by Cutup/Julienne.
 
 ![image](https://github.com/user-attachments/assets/3abe1311-2052-43fe-a427-f0b27512f0ac)
 
