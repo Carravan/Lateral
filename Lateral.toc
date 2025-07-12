@@ -1,9 +1,9 @@
 ## Interface: 11200
 ## Title: |cff00ff00Lat|cfffffffferal
 ## Author: Ahmera
-## Notes: Tracks Slice and Dice duration, Cutup-style
+## Notes: Tracks Slice and Dice duration, EventHorizon-style
 ## SavedVariables: LateralDB
-## Version: 1.0
+## Version: 1.1
 
 libs\AceLibrary\AceLibrary.lua
 libs\Compost-2.0\Compost-2.0.lua
