@@ -11,11 +11,6 @@ Slash command alias:
 **/lateral** or **/lat**
 
 Available commands:
-
 * /lat toggle - Enable/disable the tracker
-* /lat lock - Lock frame position
-* /lat unlock - Unlock frame position, drag with left mouse while holding ALT modifier
-* /lat reset - Reset position to center
-* /lat status - Show current status (debug stuff)
 
 Look and feel has to be adjusted by editing Lateral.lua (sorry)
