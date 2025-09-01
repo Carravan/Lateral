@@ -1,7 +1,7 @@
 # Lateral
 Turtle WoW Rogue Slice and Dice tracker, vaguely inspired by Cutup/Julienne.
 
-![image](https://github.com/user-attachments/assets/3abe1311-2052-43fe-a427-f0b27512f0ac)
+<img width="313" height="132" alt="image" src="https://github.com/user-attachments/assets/08941e0b-7dd0-4920-8f73-dae3c248e096" />
 
 Lateral will show a bar in the center of your screen indicating:
 * Duration of active SnD (yellow), left/white number
