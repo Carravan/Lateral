@@ -3,18 +3,21 @@ local frame = CreateFrame("Frame", "LateralTrackerFrame", UIParent)
 
 local DEBUG_ENABLED = false
 
-local function DebugPrint(message)
-	if DEBUG_ENABLED then
-		DEFAULT_CHAT_FRAME:AddMessage("[|cff00ff00Lat|cfffffffferalDebug] " .. tostring(message))
-	end
-end
-
 local function LatPrint(message)
 	DEFAULT_CHAT_FRAME:AddMessage("[|cff00ff00Lat|cfffffffferal] " .. tostring(message))
 end
 
+local function GetTalentPosition(name)
+	for i = 1, GetNumTalentTabs() do
+		for j = 1, GetNumTalents(i) do
+			if GetTalentInfo(i, j) == name then return {i, j} end
+		end
+	end
+end
+
 local FRAME_WIDTH = 250
 local FRAME_HEIGHT = 30
+local FRAME_SPACING = 5
 local UPDATE_INTERVAL = 0.05
 
 local BG_COLOR = {0, 0, 0, 0.64}
@@ -22,66 +25,113 @@ local POTENTIAL_COLOR = {0.29, 0.45, 1, 1}
 local ACTIVE_COLOR = {0.97, 1, 0.35, 1}
 
 local SND_DURATIONS = {9, 12, 15, 18, 21}
+local RUPTURE_DURATIONS = {8, 10, 12, 14, 16}
+local ENVENOM_DURATIONS = {12, 16, 20, 24, 28}
 
 local defaultSettings = {
-	enabled = true,
-	xOffset = 0,
-	yOffset = -70,
-	locked = false
+	enabled = true
 }
 
--- Create the main frame
-frame:SetWidth(FRAME_WIDTH)
-frame:SetHeight(FRAME_HEIGHT)
-frame:SetPoint("CENTER", UIParent, "CENTER", 0, -70)
-frame:SetFrameStrata("MEDIUM")
-frame:SetMovable(true)
-frame:EnableMouse(true)
+-- Helper function to create a uniform tracker frame
+local function CreateTrackerFrame(name, frameName, parent)
+	local trackerFrame = CreateFrame("Frame", frameName, parent or UIParent)
+	trackerFrame:SetWidth(FRAME_WIDTH)
+	trackerFrame:SetHeight(FRAME_HEIGHT)
+	trackerFrame:SetPoint("CENTER", UIParent, "CENTER", 0, -70)
+	trackerFrame:SetFrameStrata("MEDIUM")
+	
+	-- Background texture
+	local bgTexture = trackerFrame:CreateTexture(nil, "BACKGROUND")
+	bgTexture:SetAllPoints(trackerFrame)
+	bgTexture:SetTexture(0, 0, 0, BG_COLOR[4])
+	
+	return trackerFrame, bgTexture
+end
 
--- Background texture
-local bgTexture = frame:CreateTexture(nil, "BACKGROUND")
-bgTexture:SetAllPoints(frame)
-bgTexture:SetTexture(0, 0, 0, BG_COLOR[4])
+-- Helper function to create a status bar
+local function CreateStatusBar(parent, color, frameLevel)
+	local bar = CreateFrame("StatusBar", nil, parent)
+	bar:SetAllPoints(parent)
+	bar:SetStatusBarTexture("Interface\\AddOns\\Lateral\\Flat.tga")
+	bar:SetStatusBarColor(unpack(color))
+	bar:SetMinMaxValues(0, 100)
+	bar:SetValue(0)
+	if frameLevel then
+		bar:SetFrameLevel(frameLevel)
+	end
+	bar:Hide()
+	return bar
+end
 
--- Potential duration bar (blue)
-local potentialBar = CreateFrame("StatusBar", nil, frame)
-potentialBar:SetAllPoints(frame)
-potentialBar:SetStatusBarTexture("Interface\\AddOns\\Lateral\\Flat.tga")
-potentialBar:SetStatusBarColor(unpack(POTENTIAL_COLOR))
-potentialBar:SetMinMaxValues(0, 100)
-potentialBar:SetValue(0)
-potentialBar:Hide()
+-- Helper function to create text elements
+local function CreateTextElement(parent, point, xOffset, color, size, outline)
+	local text = parent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+	text:SetPoint(point, parent, point, xOffset, 0)
+	text:SetTextColor(unpack(color))
+	text:SetFont("Interface\\AddOns\\Lateral\\ABF.ttf", size, outline)
+	return text
+end
 
--- Active duration bar (yellow)
-local activeBar = CreateFrame("StatusBar", nil, frame)
-activeBar:SetAllPoints(frame)
-activeBar:SetStatusBarTexture("Interface\\AddOns\\Lateral\\Flat.tga")
-activeBar:SetStatusBarColor(unpack(ACTIVE_COLOR))
-activeBar:SetMinMaxValues(0, 100)
-activeBar:SetValue(0)
-activeBar:SetFrameLevel(potentialBar:GetFrameLevel() + 1)
-activeBar:Hide()
+-- Tracker data structure to reduce upvalue count
+local trackers = {}
 
--- Potential duration text (right side)
-local potentialText = activeBar:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-potentialText:SetPoint("RIGHT", potentialBar, "RIGHT", -5, 0)
-potentialText:SetTextColor(0.16, 1, 0.01, 1)
-potentialText:SetFont("Interface\\AddOns\\Lateral\\ABF.ttf", 16)
-potentialText:SetDrawLayer("OVERLAY", 3) -- Higher sublevel to appear above active bar
+-- Create Slice and Dice tracker
+trackers.snd = {}
+trackers.snd.frame, trackers.snd.bgTexture = CreateTrackerFrame("Slice and Dice", "LateralTrackerFrame")
+trackers.snd.potentialBar = CreateStatusBar(trackers.snd.frame, POTENTIAL_COLOR)
+trackers.snd.activeBar = CreateStatusBar(trackers.snd.frame, ACTIVE_COLOR, trackers.snd.potentialBar:GetFrameLevel() + 1)
 
-local potentialText2 = potentialBar:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-potentialText2:SetPoint("RIGHT", potentialBar, "RIGHT", -5, 0)
-potentialText2:SetTextColor(0.16, 1, 0.01, 1)
-potentialText2:SetFont("Interface\\AddOns\\Lateral\\ABF.ttf", 16)
+-- Create Slice and Dice text elements
+trackers.snd.potentialText = CreateTextElement(trackers.snd.activeBar, "RIGHT", -5, {0.16, 1, 0.01, 1}, 16)
+trackers.snd.potentialText:SetDrawLayer("OVERLAY", 3)
+trackers.snd.potentialText2 = CreateTextElement(trackers.snd.potentialBar, "RIGHT", -5, {0.16, 1, 0.01, 1}, 16)
+trackers.snd.activeText = CreateTextElement(trackers.snd.activeBar, "LEFT", 5, {1, 1, 1, 1}, 16, "OUTLINE")
 
--- Active duration text (left side)
-local activeText = activeBar:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-activeText:SetPoint("LEFT", activeBar, "LEFT", 5, 0)
-activeText:SetTextColor(1, 1, 1, 1)
-activeText:SetFont("Interface\\AddOns\\Lateral\\ABF.ttf", 16, "OUTLINE")
+-- Create Taste for Blood tracker
+trackers.tfb = {}
+trackers.tfb.frame, trackers.tfb.bgTexture = CreateTrackerFrame("Taste for Blood", "TasteForBloodTrackerFrame")
+trackers.tfb.potentialBar = CreateStatusBar(trackers.tfb.frame, {0.29, 0.78, 0.81, 1})
+trackers.tfb.activeBar = CreateStatusBar(trackers.tfb.frame, {1, 0.2, 0.2, 1}, trackers.tfb.potentialBar:GetFrameLevel() + 1)
+
+-- Create Taste for Blood text elements
+trackers.tfb.potentialText = CreateTextElement(trackers.tfb.activeBar, "RIGHT", -5, {0.16, 1, 0.01, 1}, 16)
+trackers.tfb.potentialText:SetDrawLayer("OVERLAY", 3)
+trackers.tfb.potentialText2 = CreateTextElement(trackers.tfb.potentialBar, "RIGHT", -5, {0.16, 1, 0.01, 1}, 16)
+trackers.tfb.activeText = CreateTextElement(trackers.tfb.activeBar, "LEFT", 5, {1, 1, 1, 1}, 16, "OUTLINE")
+
+-- Create Envenom tracker
+trackers.envenom = {}
+trackers.envenom.frame, trackers.envenom.bgTexture = CreateTrackerFrame("Envenom", "EnvenomTrackerFrame")
+trackers.envenom.potentialBar = CreateStatusBar(trackers.envenom.frame, {0.8, 0.2, 0.8, 1})
+trackers.envenom.activeBar = CreateStatusBar(trackers.envenom.frame, {0.52, 0.87, 0.01, 1}, trackers.envenom.potentialBar:GetFrameLevel() + 1)
+
+-- Create Envenom text elements
+trackers.envenom.potentialText = CreateTextElement(trackers.envenom.activeBar, "RIGHT", -5, {0.16, 1, 0.01, 1}, 16)
+trackers.envenom.potentialText:SetDrawLayer("OVERLAY", 3)
+trackers.envenom.potentialText2 = CreateTextElement(trackers.envenom.potentialBar, "RIGHT", -5, {0.16, 1, 0.01, 1}, 16)
+trackers.envenom.activeText = CreateTextElement(trackers.envenom.activeBar, "LEFT", 5, {1, 1, 1, 1}, 16, "OUTLINE")
+
+-- Backward compatibility references
+local frame = trackers.snd.frame
+local tfbFrame = trackers.tfb.frame
+local envenomFrame = trackers.envenom.frame
 
 -- Buff tracking variables
 local sliceAndDiceData = {
+	isActive = false,
+	timeLeft = 0,
+	maxDuration = 0,
+	buffIndex = nil
+}
+
+local tasteForBloodData = {
+	isActive = false,
+	timeLeft = 0,
+	maxDuration = 0,
+	buffIndex = nil
+}
+
+local envenomData = {
 	isActive = false,
 	timeLeft = 0,
 	maxDuration = 0,
@@ -157,13 +207,98 @@ local function GetSliceAndDiceTimeLeft()
 	return 0
 end
 
-local function GetImprovedSliceAndDiceRank()
-	-- Check for Improved Slice and Dice talent in Assassination tree (tab 1, talent 6)
-	local tabIndex = 1
-	local talentIndex = 6
+-- Get Taste for Blood duration using reliable buff tracking
+local function GetTasteForBloodTimeLeft()
+	local buffIndex = 0
 	
-	local name, iconTexture, tier, column, rank, maxRank = GetTalentInfo(tabIndex, talentIndex)
-	return rank or 0
+	-- Scan through all beneficial buffs
+	while true do
+		local index, untilCancelled = GetPlayerBuff(buffIndex, "HELPFUL")
+		if index < 0 then break end
+		
+		-- Get buff name
+		local buffName = GetBuffName(index)
+		
+		if buffName == "Taste for Blood" then
+			local timeLeft = GetPlayerBuffTimeLeft(index)
+			
+			-- Update tracking data
+			tasteForBloodData.isActive = true
+			tasteForBloodData.timeLeft = timeLeft
+			tasteForBloodData.buffIndex = index
+			
+			-- Track maximum duration seen (for refresh detection)
+			if timeLeft > tasteForBloodData.maxDuration then
+				tasteForBloodData.maxDuration = timeLeft
+			end
+			
+			return timeLeft
+		end
+		
+		buffIndex = buffIndex + 1
+	end
+	
+	-- No Taste for Blood found
+	tasteForBloodData.isActive = false
+	tasteForBloodData.timeLeft = 0
+	tasteForBloodData.buffIndex = nil
+	return 0
+end
+
+-- Get Envenom duration using reliable buff tracking
+local function GetEnvenomTimeLeft()
+	local buffIndex = 0
+	
+	-- Scan through all beneficial buffs
+	while true do
+		local index, untilCancelled = GetPlayerBuff(buffIndex, "HELPFUL")
+		if index < 0 then break end
+		
+		-- Get buff name
+		local buffName = GetBuffName(index)
+		
+		if buffName == "Envenom" then
+			local timeLeft = GetPlayerBuffTimeLeft(index)
+			
+			-- Update tracking data
+			envenomData.isActive = true
+			envenomData.timeLeft = timeLeft
+			envenomData.buffIndex = index
+			
+			-- Track maximum duration seen (for refresh detection)
+			if timeLeft > envenomData.maxDuration then
+				envenomData.maxDuration = timeLeft
+			end
+			
+			return timeLeft
+		end
+		
+		buffIndex = buffIndex + 1
+	end
+	
+	-- No Envenom found
+	envenomData.isActive = false
+	envenomData.timeLeft = 0
+	envenomData.buffIndex = nil
+	return 0
+end
+
+local function GetImprovedSliceAndDiceRank()
+	local talentPos = GetTalentPosition("Improved Blade Tactics")
+	if talentPos then
+		local name, iconTexture, tier, column, rank, maxRank = GetTalentInfo(talentPos[1], talentPos[2])
+		return rank or 0
+	end
+	return 0
+end
+
+local function GetTasteForBloodRank()
+	local talentPos = GetTalentPosition("Taste for Blood")
+	if talentPos then
+		local name, iconTexture, tier, column, rank, maxRank = GetTalentInfo(talentPos[1], talentPos[2])
+		return rank or 0
+	end
+	return 0
 end
 
 local function CalculatePotentialDuration(comboPoints)
@@ -188,6 +323,56 @@ local function CalculateMaxDuration()
 	return maxDuration
 end
 
+local function CalculateTasteForBloodPotentialDuration(comboPoints)
+	if not comboPoints or comboPoints == 0 then
+		return 0
+	end
+	
+	local baseDuration = RUPTURE_DURATIONS[comboPoints] or RUPTURE_DURATIONS[5]
+	local talentRank = GetTasteForBloodRank()
+	local talentBonus = talentRank * 2 -- 2 seconds per rank
+	local finalDuration = baseDuration + talentBonus
+	
+	return finalDuration
+end
+
+local function CalculateTasteForBloodMaxDuration()
+	local baseDuration = RUPTURE_DURATIONS[5] -- 5 combo points max
+	local talentRank = GetTasteForBloodRank()
+	local talentBonus = talentRank * 2 -- 2 seconds per rank
+	local maxDuration = baseDuration + talentBonus
+	
+	return maxDuration
+end
+
+local function CalculateEnvenomPotentialDuration(comboPoints)
+	if not comboPoints or comboPoints == 0 then
+		return 0
+	end
+	
+	local baseDuration = ENVENOM_DURATIONS[comboPoints] or ENVENOM_DURATIONS[5]
+	
+	-- Envenom duration is fixed by combo points, no talent modifications
+	return baseDuration
+end
+
+local function CalculateEnvenomMaxDuration()
+	local maxDuration = ENVENOM_DURATIONS[5] -- 5 combo points max
+	
+	-- Envenom duration is fixed, no talent modifications
+	return maxDuration
+end
+
+-- Get the universal maximum duration for all bars (highest possible duration)
+local function GetUniversalMaxDuration()
+	local sndMax = CalculateMaxDuration()
+	local tfbMax = CalculateTasteForBloodMaxDuration()
+	local envenomMax = CalculateEnvenomMaxDuration()
+	
+	-- Return the highest duration for consistent bar scaling
+	return math.max(sndMax, tfbMax, envenomMax)
+end
+
 -- Track last state to reduce spam
 local lastShowFrame = nil
 local lastComboPoints = nil
@@ -199,18 +384,24 @@ local function UpdateDisplay()
 	
 	-- Check if addon is enabled
 	if not LateralDB then
-		frame:Hide()
+		trackers.snd.frame:Hide()
+		trackers.tfb.frame:Hide()
+		trackers.envenom.frame:Hide()
 		return
 	end
 	
 	if not LateralDB.enabled then
-		frame:Hide()
+		trackers.snd.frame:Hide()
+		trackers.tfb.frame:Hide()
+		trackers.envenom.frame:Hide()
 		return
 	end
 	
 	-- Only show for Rogues
 	if GetPlayerClass() ~= "ROGUE" then
-		frame:Hide()
+		trackers.snd.frame:Hide()
+		trackers.tfb.frame:Hide()
+		trackers.envenom.frame:Hide()
 		return
 	end
 	
@@ -218,53 +409,114 @@ local function UpdateDisplay()
 	local hasEnemy = UnitExists("target") and UnitCanAttack("player", "target")
 	local timeLeft = GetSliceAndDiceTimeLeft()
 	local sliceAndDiceActive = sliceAndDiceData.isActive
+	local tfbTimeLeft = GetTasteForBloodTimeLeft()
+	local tasteForBloodActive = tasteForBloodData.isActive
+	local envenomTimeLeft = GetEnvenomTimeLeft()
+	local envenomActive = envenomData.isActive
 	
 	lastComboPoints = comboPoints
 	lastSliceAndDiceActive = sliceAndDiceActive
 	
-	local showFrame = false
+	-- Unified visibility logic: show all bars if we have combo points OR any buff is active
+	local shouldShowBars = (comboPoints > 0 and hasEnemy) or sliceAndDiceActive or tasteForBloodActive or envenomActive
 	
-	-- Show potential duration bar when we have combo points on an enemy
+	-- Set fixed positions for all frames (always maintain consistent positioning)
+	trackers.tfb.frame:ClearAllPoints()
+	trackers.tfb.frame:SetPoint("TOP", trackers.snd.frame, "BOTTOM", 0, -FRAME_SPACING)
+	trackers.envenom.frame:ClearAllPoints()
+	trackers.envenom.frame:SetPoint("TOP", trackers.tfb.frame, "BOTTOM", 0, -FRAME_SPACING)
+	
+	local universalMaxDuration = GetUniversalMaxDuration()
+	
+	-- === SLICE AND DICE BAR ===
+	-- Show potential duration when we have combo points on an enemy
 	if comboPoints > 0 and hasEnemy then
-		showFrame = true
 		local potentialDuration = CalculatePotentialDuration(comboPoints)
-		local maxDuration = CalculateMaxDuration()
-		
-		potentialBar:SetMinMaxValues(0, maxDuration)
-		potentialBar:SetValue(potentialDuration)
-		potentialBar:Show()
-		
-		potentialText:SetText(string.format("%.2f", potentialDuration))
-		potentialText2:SetText(string.format("%.2f", potentialDuration))
+		trackers.snd.potentialBar:SetMinMaxValues(0, universalMaxDuration)
+		trackers.snd.potentialBar:SetValue(potentialDuration)
+		trackers.snd.potentialBar:Show()
+		trackers.snd.potentialText:SetText(string.format("%.2f", potentialDuration))
+		trackers.snd.potentialText2:SetText(string.format("%.2f", potentialDuration))
 	else
-		potentialBar:Hide()
-		potentialText:SetText("")
-		potentialText2:SetText("")
+		trackers.snd.potentialBar:Hide()
+		trackers.snd.potentialText:SetText("")
+		trackers.snd.potentialText2:SetText("")
 	end
 	
-	-- Show active duration bar when Slice and Dice is active
+	-- Show active duration when Slice and Dice is active
 	if sliceAndDiceActive and timeLeft > 0 then
-		showFrame = true
-		local maxDuration = CalculateMaxDuration()
-		
-		activeBar:SetMinMaxValues(0, maxDuration)
-		activeBar:SetValue(timeLeft)
-		activeBar:Show()
-		
-		activeText:SetText(string.format("%.1f", timeLeft))
+		trackers.snd.activeBar:SetMinMaxValues(0, universalMaxDuration)
+		trackers.snd.activeBar:SetValue(timeLeft)
+		trackers.snd.activeBar:Show()
+		trackers.snd.activeText:SetText(string.format("%.1f", timeLeft))
 	else
-		activeBar:Hide()
-		activeText:SetText("")
+		trackers.snd.activeBar:Hide()
+		trackers.snd.activeText:SetText("")
 	end
 	
-	-- Handle frame visibility
-	if showFrame then
-		frame:Show()
+	-- === TASTE FOR BLOOD BAR ===
+	-- Show potential duration when we have combo points on an enemy
+	if comboPoints > 0 and hasEnemy then
+		local tfbPotentialDuration = CalculateTasteForBloodPotentialDuration(comboPoints)
+		trackers.tfb.potentialBar:SetMinMaxValues(0, universalMaxDuration)
+		trackers.tfb.potentialBar:SetValue(tfbPotentialDuration)
+		trackers.tfb.potentialBar:Show()
+		trackers.tfb.potentialText:SetText(string.format("%.2f", tfbPotentialDuration))
+		trackers.tfb.potentialText2:SetText(string.format("%.2f", tfbPotentialDuration))
 	else
-		frame:Hide()
+		trackers.tfb.potentialBar:Hide()
+		trackers.tfb.potentialText:SetText("")
+		trackers.tfb.potentialText2:SetText("")
 	end
 	
-	lastShowFrame = showFrame
+	-- Show active duration when Taste for Blood is active
+	if tasteForBloodActive and tfbTimeLeft > 0 then
+		trackers.tfb.activeBar:SetMinMaxValues(0, universalMaxDuration)
+		trackers.tfb.activeBar:SetValue(tfbTimeLeft)
+		trackers.tfb.activeBar:Show()
+		trackers.tfb.activeText:SetText(string.format("%.1f", tfbTimeLeft))
+	else
+		trackers.tfb.activeBar:Hide()
+		trackers.tfb.activeText:SetText("")
+	end
+	
+	-- === ENVENOM BAR ===
+	-- Show potential duration when we have combo points on an enemy
+	if comboPoints > 0 and hasEnemy then
+		local envenomPotentialDuration = CalculateEnvenomPotentialDuration(comboPoints)
+		trackers.envenom.potentialBar:SetMinMaxValues(0, universalMaxDuration)
+		trackers.envenom.potentialBar:SetValue(envenomPotentialDuration)
+		trackers.envenom.potentialBar:Show()
+		trackers.envenom.potentialText:SetText(string.format("%.2f", envenomPotentialDuration))
+		trackers.envenom.potentialText2:SetText(string.format("%.2f", envenomPotentialDuration))
+	else
+		trackers.envenom.potentialBar:Hide()
+		trackers.envenom.potentialText:SetText("")
+		trackers.envenom.potentialText2:SetText("")
+	end
+	
+	-- Show active duration when Envenom is active
+	if envenomActive and envenomTimeLeft > 0 then
+		trackers.envenom.activeBar:SetMinMaxValues(0, universalMaxDuration)
+		trackers.envenom.activeBar:SetValue(envenomTimeLeft)
+		trackers.envenom.activeBar:Show()
+		trackers.envenom.activeText:SetText(string.format("%.1f", envenomTimeLeft))
+	else
+		trackers.envenom.activeBar:Hide()
+		trackers.envenom.activeText:SetText("")
+	end
+	
+	-- === UNIFIED FRAME VISIBILITY ===
+	-- Show/hide all frames together based on unified condition
+	if shouldShowBars then
+		trackers.snd.frame:Show()
+		trackers.tfb.frame:Show()
+		trackers.envenom.frame:Show()
+	else
+		trackers.snd.frame:Hide()
+		trackers.tfb.frame:Hide()
+		trackers.envenom.frame:Hide()
+	end
 end
 
 -- Event handling
@@ -279,7 +531,6 @@ local function OnEvent()
 	end
 	
 	if event == "ADDON_LOADED" and arg1 == addonName then
-		DebugPrint("ADDON_LOADED event for SliceDiceTracker!")
 		
 		-- Initialize Compost library
 		if AceLibrary and AceLibrary:HasInstance("Compost-2.0") then
@@ -287,29 +538,27 @@ local function OnEvent()
 		end
 		
 		-- Initialize saved variables
-		DebugPrint("LateralDB before init: " .. tostring(LateralDB))
 		LateralDB = LateralDB or {}
-		DebugPrint("LateralDB after init: " .. tostring(LateralDB))
 		
 		for key, value in pairs(defaultSettings) do
 			if LateralDB[key] == nil then
 				LateralDB[key] = value
-				DebugPrint("Set " .. key .. " = " .. tostring(value))
-			else
-				DebugPrint("Kept existing " .. key .. " = " .. tostring(LateralDB[key]))
 			end
 		end
 		
-		-- Set position from saved variables
-		frame:SetPoint("CENTER", UIParent, "CENTER", 
-					  LateralDB.xOffset, LateralDB.yOffset)
-		DebugPrint("Frame positioned at: " .. LateralDB.xOffset .. ", " .. LateralDB.yOffset)
-		DebugPrint("Frame setup - Width: " .. frame:GetWidth() .. ", Height: " .. frame:GetHeight() .. ", Visible: " .. tostring(frame:IsVisible()))
+		-- Position frames at fixed default locations
+		trackers.snd.frame:ClearAllPoints()
+		trackers.snd.frame:SetPoint("CENTER", UIParent, "CENTER", 0, -148)
+		-- Position TFB frame below the main frame
+		trackers.tfb.frame:ClearAllPoints()
+		trackers.tfb.frame:SetPoint("TOP", trackers.snd.frame, "BOTTOM", 0, -FRAME_SPACING)
+		-- Position Envenom frame below the TFB frame
+		trackers.envenom.frame:ClearAllPoints()
+		trackers.envenom.frame:SetPoint("TOP", trackers.tfb.frame, "BOTTOM", 0, -FRAME_SPACING)
 		
 		-- Print loaded message now that addon is fully initialized
 		LatPrint("Lateral loaded. Type /lat for commands.")
 	elseif event == "PLAYER_LOGIN" then
-		DebugPrint("PLAYER_LOGIN event - Setting up OnUpdate timer with interval " .. UPDATE_INTERVAL)
 		-- Set up update timer
 		frame.updateTimer = 0
 		frame:SetScript("OnUpdate", function()
@@ -319,25 +568,10 @@ local function OnEvent()
 				frame.updateTimer = 0
 			end
 		end)
-		DebugPrint("OnUpdate script set successfully")
 	end
 end
 
--- Make frame draggable
-frame:SetScript("OnMouseDown", function()
-	if IsAltKeyDown() and LateralDB and not LateralDB.locked then
-		frame:StartMoving()
-	end
-end)
 
-frame:SetScript("OnMouseUp", function()
-	frame:StopMovingOrSizing()
-	if LateralDB then
-		local point, relativeTo, relativePoint, xOfs, yOfs = frame:GetPoint()
-		LateralDB.xOffset = xOfs
-		LateralDB.yOffset = yOfs
-	end
-end)
 
 -- Register events
 frame:RegisterEvent("ADDON_LOADED")
@@ -353,11 +587,7 @@ SLASH_LATERAL1 = "/lat"
 SLASH_LATERAL2 = "/lateral"
 
 SlashCmdList["LATERAL"] = function(msg)
-	DebugPrint("Slash command called with: '" .. tostring(msg) .. "'")
-	DebugPrint("LateralDB state: " .. tostring(LateralDB))
-	
 	if not LateralDB then
-		DebugPrint("LateralDB is nil in slash command!")
 		LatPrint("Slice and Dice Tracker: Not yet loaded. Please try again in a moment.")
 		return
 	end
@@ -370,39 +600,14 @@ SlashCmdList["LATERAL"] = function(msg)
 			LatPrint("Lateral: Enabled")
 		else
 			LatPrint("Lateral: Disabled")
-			frame:Hide()
+			trackers.snd.frame:Hide()
+			trackers.tfb.frame:Hide()
+			trackers.envenom.frame:Hide()
 		end
-	elseif msg == "lock" then
-		LateralDB.locked = true
-		LatPrint("Lateral: Frame locked")
-	elseif msg == "unlock" then
-		LateralDB.locked = false
-		LatPrint("Lateral: Frame unlocked")
-	elseif msg == "reset" then
-		LateralDB.xOffset = -252
-		LateralDB.yOffset = -125
-		frame:ClearAllPoints()
-		frame:SetPoint("CENTER", UIParent, "CENTER", 0, -125)
-		LatPrint("Lateral: Position reset")
-	elseif msg == "status" then
-		if sliceAndDiceData.isActive then
-			LatPrint("Lateral: Slice and Dice ACTIVE - " .. math.floor(sliceAndDiceData.timeLeft) .. "s remaining")
-		else
-			LatPrint("Lateral: Slice and Dice INACTIVE")
-		end
-		local comboPoints = GetComboPoints()
-		if comboPoints > 0 then
-			local potential = CalculatePotentialDuration(comboPoints)
-			LatPrint("  Potential with " .. comboPoints .. " combo points: " .. math.floor(potential) .. "s")
-		end
-		LatPrint("  Frame is " .. (LateralDB.locked and "LOCKED" or "UNLOCKED"))
+
+
 	else
 		LatPrint("Lateral Commands:")
 		LatPrint("/lat toggle - Enable/disable the tracker")
-		LatPrint("/lat lock - Lock frame position")
-		LatPrint("/lat unlock - Unlock frame position")
-		LatPrint("/lat reset - Reset position to center")
-		LatPrint("/lat status - Show current status")
-		LatPrint("Alt+drag to move the frame (when unlocked)")
 	end
 end
