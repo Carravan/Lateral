@@ -1,5 +1,5 @@
 # Lateral
-Turtle WoW Rogue Slice and Dice tracker, vaguely inspired by Cutup/Julienne.
+Turtle WoW Rogue Slice and Dice / Envenom / Taste for Blood tracker, vaguely inspired by Cutup/Julienne.
 
 <img width="313" height="132" alt="image" src="https://github.com/user-attachments/assets/08941e0b-7dd0-4920-8f73-dae3c248e096" />
 
