@@ -111,8 +111,8 @@ trackers.envenom.activeText = CreateTextElement(trackers.envenom.activeBar, "LEF
 -- Create Expose Armor tracker (target debuff)
 trackers.expose = {}
 trackers.expose.frame, trackers.expose.bgTexture = CreateTrackerFrame("Expose Armor", "ExposeArmorTrackerFrame")
-trackers.expose.potentialBar = CreateStatusBar(trackers.expose.frame, {0.8, 0.65, 0.2, 1})
-trackers.expose.activeBar = CreateStatusBar(trackers.expose.frame, {1, 0.85, 0.3, 1}, trackers.expose.potentialBar:GetFrameLevel() + 1)
+trackers.expose.potentialBar = CreateStatusBar(trackers.expose.frame, {0.8, 0.8, 0.8, 1})
+trackers.expose.activeBar = CreateStatusBar(trackers.expose.frame, {0.32, 0.34, 0.63, 1}, trackers.expose.potentialBar:GetFrameLevel() + 1)
 
 -- Create Expose Armor text elements
 trackers.expose.potentialText = CreateTextElement(trackers.expose.activeBar, "RIGHT", -5, {0.16, 1, 0.01, 1}, 16)
