@@ -1,10 +1,13 @@
 local addonName = "Lateral"
 local frame = CreateFrame("Frame", "LateralTrackerFrame", UIParent)
 
-local DEBUG_ENABLED = false
-
 local function LatPrint(message)
 	DEFAULT_CHAT_FRAME:AddMessage("[|cff00ff00Lat|cfffffffferal] " .. tostring(message))
+end
+
+local function NormalizeEffectName(name)
+	if not name then return nil end
+	return string.gsub(name, " %(%d+%)$", "")
 end
 
 local function GetTalentPosition(name)
@@ -149,6 +152,7 @@ local envenomData = {
 
 -- Expose Armor timers per unit (unit name -> {starts, ends})
 local exposeTimers = {}
+local playerGUID = nil
 
 -- (removed unused Compost library)
 
@@ -449,16 +453,16 @@ local lastSliceAndDiceActive = nil
 local updateCount = 0
 
 local function GetExposeArmorTimeLeftForTarget()
-	if not UnitExists("target") then return 0, false end
-	local unit = UnitName("target")
-	local timer = unit and exposeTimers[unit]
-	if timer and timer.ends then
-		local remaining = timer.ends - GetTime()
-		if remaining > 0 then
-			return remaining, true
-		end
-	end
-	return 0, false
+    local exists, guid = UnitExists("TARGET")
+    if not exists or not guid then return 0, false end
+    local timer = exposeTimers[guid]
+    if timer and timer.ends then
+        local remaining = timer.ends - GetTime()
+        if remaining > 0 then
+            return remaining, true
+        end
+    end
+    return 0, false
 end
 
 local function UpdateDisplay()
@@ -512,14 +516,10 @@ local function UpdateDisplay()
 		exposeTimeLeft, exposeActive = GetExposeArmorTimeLeftForTarget()
 		if UnitExists("target") then
 			local exposePresent = TargetHasDebuff("Expose Armor")
-			local unit = UnitName("target")
-			if exposePresent and not exposeActive and unit then
-				-- Start a fresh timer if present but no timer exists
-				exposeTimers[unit] = { starts = GetTime(), ends = GetTime() + EXPOSE_ARMOR_DURATION }
-				exposeTimeLeft, exposeActive = GetExposeArmorTimeLeftForTarget()
-			elseif not exposePresent and exposeActive and unit then
+			local _, guid = UnitExists("TARGET")
+			if not exposePresent and exposeActive and guid then
 				-- Clear stale timer if debuff no longer present
-				exposeTimers[unit] = nil
+				exposeTimers[guid] = nil
 				exposeTimeLeft, exposeActive = 0, false
 			end
 		end
@@ -648,8 +648,8 @@ local function UpdateDisplay()
 
 	-- === EXPOSE ARMOR BAR (TARGET DEBUFF) ===
 	if activeTalents.improvedExpose then
-		-- Potential is fixed 30s; show when we have combo points on an enemy
-		if comboPoints > 0 and hasEnemy then
+		-- Potential is fixed 30s; show only at 5 combo points on an enemy
+		if comboPoints == 5 and hasEnemy then
 			local exposePotential = CalculateExposePotentialDuration(comboPoints)
 			trackers.expose.potentialBar:SetMinMaxValues(0, universalMaxDuration)
 			trackers.expose.potentialBar:SetValue(exposePotential)
@@ -701,11 +701,71 @@ local function OnEvent()
 	-- Handle events that should trigger updates
 	if event == "PLAYER_TARGET_CHANGED" then
 		if LateralDB then UpdateDisplay() end
+		-- ensure we cache player GUID once login is complete
+		if not playerGUID then local exists, guid = UnitExists("PLAYER"); if exists then playerGUID = guid end end
 	elseif event == "PLAYER_AURAS_CHANGED" then
 		if LateralDB then UpdateDisplay() end
 	elseif event == "ACTIONBAR_UPDATE_USABLE" then
 		if LateralDB then UpdateDisplay() end
-	-- No combat-log handling for Expose Armor; handled via target scan
+	-- Combat-log handling for Expose Armor application/removal
+	elseif event == "CHAT_MSG_SPELL_PERIODIC_CREATURE_DAMAGE" then
+		for unit, effect in string.gfind(arg1, '(.+) is afflicted by (.+)%.') do
+			if NormalizeEffectName(effect) == "Expose Armor" then
+				-- map to current target GUID if the afflicted unit is our current target
+				if UnitExists("target") and UnitName("target") == unit then
+					local exists, guid = UnitExists("TARGET")
+					if exists and guid then
+						local cp = GetComboPointsOnTarget()
+						if cp ~= 5 then
+							exposeTimers[guid] = { starts = GetTime(), ends = GetTime() + EXPOSE_ARMOR_DURATION }
+						end
+					end
+				end
+				if LateralDB then UpdateDisplay() end
+			end
+		end
+	elseif event == "CHAT_MSG_SPELL_AURA_GONE_OTHER" then
+		for effect, unit in string.gfind(arg1, '(.+) fades from (.+)%.') do
+			if effect == "Expose Armor" then
+				-- clear only if it matches our current target
+				if UnitExists("target") and UnitName("target") == unit then
+					local exists, guid = UnitExists("TARGET")
+					if exists and guid then exposeTimers[guid] = nil end
+				end
+				if LateralDB then UpdateDisplay() end
+			end
+		end
+	elseif event == "CHAT_MSG_SPELL_BREAK_AURA" then
+		for unit, effect in string.gfind(arg1, "(.+)'s (.+) is removed%.") do
+			if effect == "Expose Armor" then
+				if UnitExists("target") and UnitName("target") == unit then
+					local exists, guid = UnitExists("TARGET")
+					if exists and guid then exposeTimers[guid] = nil end
+				end
+				if LateralDB then UpdateDisplay() end
+			end
+		end
+	elseif event == "UNIT_CASTEVENT" then
+		-- args: casterGUID, targetGUID, type, spellId
+		local casterGUID, targetGUID, evType, spellId = arg1, arg2, arg3, arg4
+		if not playerGUID then local exists, guid = UnitExists("PLAYER"); if exists then playerGUID = guid end end
+		-- Mapping: arg1=casterGUID, arg2=targetGUID, arg3=event type, arg4=spellId
+		if evType == "CAST" and spellId == 11198 and playerGUID and targetGUID and casterGUID == playerGUID then
+			-- start/refresh timer on target GUID
+			local cp = GetComboPointsOnTarget()
+			if cp ~= 5 then
+				exposeTimers[targetGUID] = { starts = GetTime(), ends = GetTime() + EXPOSE_ARMOR_DURATION }
+			end
+			if LateralDB then UpdateDisplay() end
+		end
+	elseif event == "CHAT_MSG_COMBAT_HOSTILE_DEATH" or event == "CHAT_MSG_COMBAT_HONOR_GAIN" then
+		for unit in string.gfind(arg1, '(.+) dies') do
+			if UnitExists("target") and UnitName("target") == unit then
+				local exists, guid = UnitExists("TARGET")
+				if exists and guid and exposeTimers[guid] then exposeTimers[guid] = nil end
+				if LateralDB then UpdateDisplay() end
+			end
+		end
 	end
 	
 	if event == "ADDON_LOADED" and arg1 == addonName then
@@ -763,6 +823,12 @@ frame:RegisterEvent("PLAYER_TARGET_CHANGED")
 frame:RegisterEvent("PLAYER_AURAS_CHANGED")
 frame:RegisterEvent("ACTIONBAR_UPDATE_USABLE")
 frame:RegisterEvent("LEARNED_SPELL_IN_TAB")
+frame:RegisterEvent("CHAT_MSG_SPELL_AURA_GONE_OTHER")
+frame:RegisterEvent("CHAT_MSG_SPELL_BREAK_AURA")
+frame:RegisterEvent("CHAT_MSG_SPELL_PERIODIC_CREATURE_DAMAGE")
+frame:RegisterEvent("UNIT_CASTEVENT")
+frame:RegisterEvent("CHAT_MSG_COMBAT_HOSTILE_DEATH")
+frame:RegisterEvent("CHAT_MSG_COMBAT_HONOR_GAIN")
 
 
 frame:SetScript("OnEvent", OnEvent)
