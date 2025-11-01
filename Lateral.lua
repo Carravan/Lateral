@@ -18,6 +18,19 @@ local function GetTalentPosition(name)
 	end
 end
 
+-- Tracker data structure to reduce upvalue count
+local trackers = {}
+trackers.comboPoints = 0
+trackers.previousComboPoints = 0
+
+local function GetComboPointsUsed()
+	if trackers.comboPoints == 0 then
+		return trackers.previousComboPoints
+	else
+		return trackers.comboPoints
+	end
+end
+
 local FRAME_WIDTH = 250
 local FRAME_HEIGHT = 30
 local FRAME_SPACING = 5
@@ -71,9 +84,6 @@ local function CreateTextElement(parent, point, xOffset, color, size, outline)
 	text:SetFont("Interface\\AddOns\\Lateral\\ABF.ttf", size, outline)
 	return text
 end
-
--- Tracker data structure to reduce upvalue count
-local trackers = {}
 
 -- Create Slice and Dice tracker
 trackers.snd = {}
@@ -153,6 +163,8 @@ local envenomData = {
 -- Expose Armor timers per unit (unit name -> {starts, ends})
 local exposeTimers = {}
 local playerGUID = nil
+local lastExposeGuid = nil
+local pendingExpose = nil
 
 -- (removed unused Compost library)
 
@@ -169,9 +181,20 @@ end
 local function GetComboPointsOnTarget()
 	-- Only return combo points if we have a valid attackable target
 	if UnitExists("target") and UnitCanAttack("player", "target") and not UnitIsDead("target") then
-		return GetComboPoints("target") or GetComboPoints() or 0
+		return trackers.comboPoints or 0
 	end
 	return 0
+end
+
+-- Keep trackers.comboPoints in sync with the game state
+local function RefreshComboPoints()
+	local cp = 0
+	if UnitExists("target") and UnitCanAttack("player", "target") and not UnitIsDead("target") then
+		cp = (GetComboPoints and (GetComboPoints("target") or GetComboPoints())) or 0
+		cp = cp or 0
+	end
+	trackers.previousComboPoints = trackers.comboPoints
+	trackers.comboPoints = cp
 end
 
 -- Get buff name using tooltip scanning (ElkBuffBar method)
@@ -343,7 +366,7 @@ local function UpdateTalentState()
 end
 
 local function CalculatePotentialDuration(comboPoints)
-	if not comboPoints or comboPoints == 0 then
+	if not trackers.comboPoints or trackers.comboPoints == 0 then
 		return 0
 	end
 	
@@ -682,6 +705,7 @@ end
 local function OnEvent()
 	-- Handle events that should trigger updates
 	if event == "PLAYER_TARGET_CHANGED" then
+		RefreshComboPoints()
 		if LateralDB then UpdateDisplay() end
 		-- ensure we cache player GUID once login is complete
 		if not playerGUID then local exists, guid = UnitExists("PLAYER"); if exists then playerGUID = guid end end
@@ -689,7 +713,11 @@ local function OnEvent()
 		if LateralDB then UpdateDisplay() end
 	elseif event == "ACTIONBAR_UPDATE_USABLE" then
 		if LateralDB then UpdateDisplay() end
+	elseif event == "PLAYER_COMBO_POINTS" then
+		RefreshComboPoints()
+		if LateralDB then UpdateDisplay() end
 	-- Combat-log handling for Expose Armor application/removal
+	--[[
 	elseif event == "CHAT_MSG_SPELL_PERIODIC_CREATURE_DAMAGE" then
 		for unit, effect in string.gfind(arg1, '(.+) is afflicted by (.+)%.') do
 			if NormalizeEffectName(effect) == "Expose Armor" then
@@ -697,10 +725,7 @@ local function OnEvent()
 				if UnitExists("target") and UnitName("target") == unit then
 					local exists, guid = UnitExists("TARGET")
 					if exists and guid then
-						local cp = GetComboPointsOnTarget()
-						if cp ~= 5 then
-							exposeTimers[guid] = { starts = GetTime(), ends = GetTime() + EXPOSE_ARMOR_DURATION }
-						end
+						exposeTimers[guid] = { starts = GetTime(), ends = GetTime() + EXPOSE_ARMOR_DURATION }
 					end
 				end
 				if LateralDB then UpdateDisplay() end
@@ -727,18 +752,47 @@ local function OnEvent()
 				if LateralDB then UpdateDisplay() end
 			end
 		end
+		--]]
 	elseif event == "UNIT_CASTEVENT" then
 		-- args: casterGUID, targetGUID, type, spellId
 		local casterGUID, targetGUID, evType, spellId = arg1, arg2, arg3, arg4
 		if not playerGUID then local exists, guid = UnitExists("PLAYER"); if exists then playerGUID = guid end end
 		-- Mapping: arg1=casterGUID, arg2=targetGUID, arg3=event type, arg4=spellId
-		if evType == "CAST" and spellId == 11198 and playerGUID and targetGUID and casterGUID == playerGUID then
-			-- start/refresh timer on target GUID
-			local cp = GetComboPointsOnTarget()
-			if cp ~= 5 then
-				exposeTimers[targetGUID] = { starts = GetTime(), ends = GetTime() + EXPOSE_ARMOR_DURATION }
+		if evType == "CAST" then
+			if spellId == 11198 and playerGUID and targetGUID and casterGUID == playerGUID then
+				-- schedule a pending apply to be finalized after latency window
+				local delay = 0.2
+				local _, _, nping = GetNetStats()
+				if nping and nping > 0 and nping < 500 then
+					delay = 0.05 + (nping / 1000.0)
+				end
+				pendingExpose = { guid = targetGUID, applyAt = GetTime() + delay }
+				lastExposeGuid = targetGUID
 			end
-			if LateralDB then UpdateDisplay() end
+		end
+	elseif event == "CHAT_MSG_SPELL_SELF_DAMAGE" then
+		-- Detect Expose Armor failures and cancel the last started timer
+		local resist_test = "Your (.+) was resisted by (.+)"
+		local missed_test = "Your (.+) missed (.+)"
+		local parry_test = "Your (.+) is parried by (.+)"
+		local immune_test = "Your (.+) fail.+%. (.+) is immune"
+		local block_test = "Your (.+) was blocked by (.+)"
+		local dodge_test = "Your (.+) was dodged by (.+)"
+
+		local spellName, failedTarget
+		local tests = { resist_test, immune_test, missed_test, parry_test, block_test, dodge_test }
+		for _, test in pairs(tests) do
+			local _, _, foundSpell, foundTarget = string.find(arg1, test)
+			if foundSpell and foundTarget then
+				spellName = foundSpell
+				failedTarget = foundTarget
+				break
+			end
+		end
+
+		if spellName == "Expose Armor" and failedTarget then
+			-- cancel only the pending apply, do not touch existing active timers
+			if pendingExpose then pendingExpose = nil end
 		end
 	elseif event == "CHAT_MSG_COMBAT_HOSTILE_DEATH" or event == "CHAT_MSG_COMBAT_HONOR_GAIN" then
 		for unit in string.gfind(arg1, '(.+) dies') do
@@ -752,8 +806,6 @@ local function OnEvent()
 	
 	if event == "ADDON_LOADED" and arg1 == addonName then
 		
-		-- (removed Compost/AceLibrary initialization)
-		
 		-- Initialize saved variables
 		LateralDB = LateralDB or {}
 		
@@ -766,13 +818,13 @@ local function OnEvent()
 		-- Position frames at fixed default locations
 		trackers.snd.frame:ClearAllPoints()
 		trackers.snd.frame:SetPoint("CENTER", UIParent, "CENTER", 0, -148)
-		-- Position TFB frame below the main frame
+
 		trackers.tfb.frame:ClearAllPoints()
 		trackers.tfb.frame:SetPoint("TOP", trackers.snd.frame, "BOTTOM", 0, -FRAME_SPACING)
-		-- Position Envenom frame below the TFB frame
+
 		trackers.envenom.frame:ClearAllPoints()
 		trackers.envenom.frame:SetPoint("TOP", trackers.tfb.frame, "BOTTOM", 0, -FRAME_SPACING)
-		-- Position Expose Armor frame below the Envenom frame
+
 		trackers.expose.frame:ClearAllPoints()
 		trackers.expose.frame:SetPoint("TOP", trackers.envenom.frame, "BOTTOM", 0, -FRAME_SPACING)
 		
@@ -781,11 +833,17 @@ local function OnEvent()
 	elseif event == "PLAYER_ENTERING_WORLD" then
 		-- Cache talent state and begin updates
 		UpdateTalentState()
+		RefreshComboPoints()
 		-- Set up update timer
 		frame.updateTimer = 0
 		frame:SetScript("OnUpdate", function()
 			frame.updateTimer = frame.updateTimer + arg1
 			if frame.updateTimer >= UPDATE_INTERVAL then
+				-- finalize pending Expose Armor apply if latency window has passed and no failure was detected
+				if pendingExpose and GetTime() >= pendingExpose.applyAt then
+					exposeTimers[pendingExpose.guid] = { starts = GetTime(), ends = GetTime() + EXPOSE_ARMOR_DURATION }
+					pendingExpose = nil
+				end
 				UpdateDisplay()
 				frame.updateTimer = 0
 			end
@@ -809,9 +867,11 @@ frame:RegisterEvent("LEARNED_SPELL_IN_TAB")
 frame:RegisterEvent("CHAT_MSG_SPELL_AURA_GONE_OTHER")
 frame:RegisterEvent("CHAT_MSG_SPELL_BREAK_AURA")
 frame:RegisterEvent("CHAT_MSG_SPELL_PERIODIC_CREATURE_DAMAGE")
+frame:RegisterEvent("CHAT_MSG_SPELL_SELF_DAMAGE")
 frame:RegisterEvent("UNIT_CASTEVENT")
 frame:RegisterEvent("CHAT_MSG_COMBAT_HOSTILE_DEATH")
 frame:RegisterEvent("CHAT_MSG_COMBAT_HONOR_GAIN")
+frame:RegisterEvent("PLAYER_COMBO_POINTS")
 
 
 frame:SetScript("OnEvent", OnEvent)
