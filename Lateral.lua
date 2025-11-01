@@ -42,7 +42,8 @@ local ENVENOM_DURATIONS = {12, 16, 20, 24, 28}
 local EXPOSE_ARMOR_DURATION = 30
 
 local defaultSettings = {
-	enabled = true
+	enabled = true,
+	debug = false
 }
 
 -- Helper function to create a uniform tracker frame
@@ -138,39 +139,15 @@ local frame = trackers.snd.frame
 local tfbFrame = trackers.tfb.frame
 local envenomFrame = trackers.envenom.frame
 
--- Buff tracking variables
-local sliceAndDiceData = {
-	isActive = false,
-	timeLeft = 0,
-	maxDuration = 0,
-	buffIndex = nil
-}
-
-local tasteForBloodData = {
-	isActive = false,
-	timeLeft = 0,
-	maxDuration = 0,
-	buffIndex = nil
-}
-
-local envenomData = {
-	isActive = false,
-	timeLeft = 0,
-	maxDuration = 0,
-	buffIndex = nil
-}
-
--- Expose Armor timers per unit (unit name -> {starts, ends})
 local exposeTimers = {}
 local playerGUID = nil
 local lastExposeGuid = nil
 local pendingExpose = nil
+local sndManualTimer = nil
+local tfbManualTimer = nil
+local envenomManualTimer = nil
 
 -- (removed unused Compost library)
-
--- Create tooltip for buff name detection (hidden)
-local tooltip = CreateFrame("GameTooltip", "SliceDiceTooltip", nil, "GameTooltipTemplate")
-tooltip:SetOwner(WorldFrame, "ANCHOR_NONE")
 
 -- Utility functions
 local function GetPlayerClass()
@@ -197,152 +174,6 @@ local function RefreshComboPoints()
 	trackers.comboPoints = cp
 end
 
--- Get buff name using tooltip scanning (ElkBuffBar method)
-local function GetBuffName(buffIndex)
-	tooltip:SetPlayerBuff(buffIndex)
-	local toolTipText = getglobal("SliceDiceTooltipTextLeft1")
-	if toolTipText then
-		return toolTipText:GetText()
-	end
-	return nil
-end
-
--- Target debuff name via tooltip scanning
-local function GetTargetDebuffName(debuffIndex)
-	tooltip:SetOwner(WorldFrame, "ANCHOR_NONE")
-	tooltip:SetUnitDebuff("target", debuffIndex)
-	local toolTipText = getglobal("SliceDiceTooltipTextLeft1")
-	if toolTipText then
-		return toolTipText:GetText()
-	end
-	return nil
-end
-
-local function TargetHasDebuff(debuffName)
-	if not UnitExists("target") then return false end
-	for i = 1, 16 do
-		local texture = UnitDebuff("target", i)
-		if not texture then break end
-		local name = GetTargetDebuffName(i)
-		if name == debuffName then return true end
-	end
-	return false
-end
-
--- Get Slice and Dice duration using reliable buff tracking
-local function GetSliceAndDiceTimeLeft()
-	local buffIndex = 0
-	
-	-- Scan through all beneficial buffs
-	while true do
-		local index, untilCancelled = GetPlayerBuff(buffIndex, "HELPFUL")
-		if index < 0 then break end
-		
-		-- Get buff name
-		local buffName = GetBuffName(index)
-		
-		if buffName == "Slice and Dice" then
-			local timeLeft = GetPlayerBuffTimeLeft(index)
-			
-			-- Update tracking data
-			sliceAndDiceData.isActive = true
-			sliceAndDiceData.timeLeft = timeLeft
-			sliceAndDiceData.buffIndex = index
-			
-			-- Track maximum duration seen (for refresh detection)
-			if timeLeft > sliceAndDiceData.maxDuration then
-				sliceAndDiceData.maxDuration = timeLeft
-			end
-			
-			return timeLeft
-		end
-		
-		buffIndex = buffIndex + 1
-	end
-	
-	-- No Slice and Dice found
-	sliceAndDiceData.isActive = false
-	sliceAndDiceData.timeLeft = 0
-	sliceAndDiceData.buffIndex = nil
-	return 0
-end
-
--- Get Taste for Blood duration using reliable buff tracking
-local function GetTasteForBloodTimeLeft()
-	local buffIndex = 0
-	
-	-- Scan through all beneficial buffs
-	while true do
-		local index, untilCancelled = GetPlayerBuff(buffIndex, "HELPFUL")
-		if index < 0 then break end
-		
-		-- Get buff name
-		local buffName = GetBuffName(index)
-		
-		if buffName == "Taste for Blood" then
-			local timeLeft = GetPlayerBuffTimeLeft(index)
-			
-			-- Update tracking data
-			tasteForBloodData.isActive = true
-			tasteForBloodData.timeLeft = timeLeft
-			tasteForBloodData.buffIndex = index
-			
-			-- Track maximum duration seen (for refresh detection)
-			if timeLeft > tasteForBloodData.maxDuration then
-				tasteForBloodData.maxDuration = timeLeft
-			end
-			
-			return timeLeft
-		end
-		
-		buffIndex = buffIndex + 1
-	end
-	
-	-- No Taste for Blood found
-	tasteForBloodData.isActive = false
-	tasteForBloodData.timeLeft = 0
-	tasteForBloodData.buffIndex = nil
-	return 0
-end
-
--- Get Envenom duration using reliable buff tracking
-local function GetEnvenomTimeLeft()
-	local buffIndex = 0
-	
-	-- Scan through all beneficial buffs
-	while true do
-		local index, untilCancelled = GetPlayerBuff(buffIndex, "HELPFUL")
-		if index < 0 then break end
-		
-		-- Get buff name
-		local buffName = GetBuffName(index)
-		
-		if buffName == "Envenom" then
-			local timeLeft = GetPlayerBuffTimeLeft(index)
-			
-			-- Update tracking data
-			envenomData.isActive = true
-			envenomData.timeLeft = timeLeft
-			envenomData.buffIndex = index
-			
-			-- Track maximum duration seen (for refresh detection)
-			if timeLeft > envenomData.maxDuration then
-				envenomData.maxDuration = timeLeft
-			end
-			
-			return timeLeft
-		end
-		
-		buffIndex = buffIndex + 1
-	end
-	
-	-- No Envenom found
-	envenomData.isActive = false
-	envenomData.timeLeft = 0
-	envenomData.buffIndex = nil
-	return 0
-end
-
 -- Generic talent helpers and cached state
 local function GetTalentRankByName(talentName)
 	local talentPos = GetTalentPosition(talentName)
@@ -366,7 +197,7 @@ local function UpdateTalentState()
 end
 
 local function CalculatePotentialDuration(comboPoints)
-	if not trackers.comboPoints or trackers.comboPoints == 0 then
+	if not comboPoints or comboPoints == 0 then
 		return 0
 	end
 	
@@ -376,15 +207,6 @@ local function CalculatePotentialDuration(comboPoints)
 	local finalDuration = baseDuration * (1 + talentBonus)
 	
 	return finalDuration
-end
-
-local function CalculateMaxDuration()
-	local baseDuration = SND_DURATIONS[5] -- 5 combo points max
-	local talentRank = GetTalentRankByName("Improved Blade Tactics")
-	local talentBonus = talentRank * 0.15
-	local maxDuration = baseDuration * (1 + talentBonus)
-	
-	return maxDuration
 end
 
 local function CalculateTasteForBloodPotentialDuration(comboPoints)
@@ -400,15 +222,6 @@ local function CalculateTasteForBloodPotentialDuration(comboPoints)
 	return finalDuration
 end
 
-local function CalculateTasteForBloodMaxDuration()
-	local baseDuration = RUPTURE_DURATIONS[5] -- 5 combo points max
-	local talentRank = GetTalentRankByName("Taste for Blood")
-	local talentBonus = talentRank * 2 -- 2 seconds per rank
-	local maxDuration = baseDuration + talentBonus
-	
-	return maxDuration
-end
-
 local function CalculateEnvenomPotentialDuration(comboPoints)
 	if not comboPoints or comboPoints == 0 then
 		return 0
@@ -416,38 +229,34 @@ local function CalculateEnvenomPotentialDuration(comboPoints)
 	
 	local baseDuration = ENVENOM_DURATIONS[comboPoints] or ENVENOM_DURATIONS[5]
 	
-	-- Envenom duration is fixed by combo points, no talent modifications
 	return baseDuration
-end
-
-local function CalculateEnvenomMaxDuration()
-	local maxDuration = ENVENOM_DURATIONS[5] -- 5 combo points max
-	
-	-- Envenom duration is fixed, no talent modifications
-	return maxDuration
-end
-
-local function CalculateExposePotentialDuration(comboPoints)
-	-- Fixed 30s duration regardless of combo points (per database)
-	return EXPOSE_ARMOR_DURATION
-end
-
-local function CalculateExposeMaxDuration()
-	return EXPOSE_ARMOR_DURATION
 end
 
 -- Get the universal maximum duration for all bars (highest possible duration)
 local function GetUniversalMaxDuration()
-	local maxDuration = CalculateMaxDuration()
+	local maxDuration = 0
+
+	do
+		local base = SND_DURATIONS[5]
+		local rank = GetTalentRankByName("Improved Blade Tactics")
+		local bonus = rank * 0.15
+		maxDuration = math.max(maxDuration, base * (1 + bonus))
+	end
+
 	if activeTalents.tasteForBlood then
-		maxDuration = math.max(maxDuration, CalculateTasteForBloodMaxDuration())
+		local base = RUPTURE_DURATIONS[5]
+		local rank = GetTalentRankByName("Taste for Blood")
+		maxDuration = math.max(maxDuration, base + (rank * 2))
 	end
+
 	if activeTalents.envenom then
-		maxDuration = math.max(maxDuration, CalculateEnvenomMaxDuration())
+		maxDuration = math.max(maxDuration, ENVENOM_DURATIONS[5])
 	end
+
 	if activeTalents.improvedExpose then
-		maxDuration = math.max(maxDuration, CalculateExposeMaxDuration())
+		maxDuration = math.max(maxDuration, EXPOSE_ARMOR_DURATION)
 	end
+
 	return maxDuration
 end
 
@@ -501,34 +310,35 @@ local function UpdateDisplay()
 	
 	local comboPoints = GetComboPointsOnTarget()
 	local hasEnemy = UnitExists("target") and UnitCanAttack("player", "target")
-	local timeLeft = GetSliceAndDiceTimeLeft()
-	local sliceAndDiceActive = sliceAndDiceData.isActive
+	-- SND time from UNIT_CASTEVENT manual timer only
+	local sliceAndDiceActive = false
+	local eventTimeLeft = 0
+	if sndManualTimer and sndManualTimer.ends then
+		eventTimeLeft = sndManualTimer.ends - GetTime()
+		if eventTimeLeft < 0 then eventTimeLeft = 0 end
+		if eventTimeLeft == 0 then sndManualTimer = nil end
+	end
+	local timeLeft = eventTimeLeft
+	if timeLeft > 0 then sliceAndDiceActive = true end
 
 	local tfbTimeLeft, tasteForBloodActive = 0, false
-	if activeTalents.tasteForBlood then
-		tfbTimeLeft = GetTasteForBloodTimeLeft()
-		tasteForBloodActive = tasteForBloodData.isActive
+	if activeTalents.tasteForBlood and tfbManualTimer and tfbManualTimer.ends then
+		tfbTimeLeft = tfbManualTimer.ends - GetTime()
+		if tfbTimeLeft < 0 then tfbTimeLeft = 0 end
+		if tfbTimeLeft == 0 then tfbManualTimer = nil else tasteForBloodActive = true end
 	end
 
 	local envenomTimeLeft, envenomActive = 0, false
-	if activeTalents.envenom then
-		envenomTimeLeft = GetEnvenomTimeLeft()
-		envenomActive = envenomData.isActive
+	if activeTalents.envenom and envenomManualTimer and envenomManualTimer.ends then
+		envenomTimeLeft = envenomManualTimer.ends - GetTime()
+		if envenomTimeLeft < 0 then envenomTimeLeft = 0 end
+		if envenomTimeLeft == 0 then envenomManualTimer = nil else envenomActive = true end
 	end
 
 	local exposeTimeLeft, exposeActive = 0, false
-	if activeTalents.improvedExpose then
-		exposeTimeLeft, exposeActive = GetExposeArmorTimeLeftForTarget()
-		if UnitExists("target") then
-			local exposePresent = TargetHasDebuff("Expose Armor")
-			local _, guid = UnitExists("TARGET")
-			if not exposePresent and exposeActive and guid then
-				-- Clear stale timer if debuff no longer present
-				exposeTimers[guid] = nil
-				exposeTimeLeft, exposeActive = 0, false
-			end
+		if activeTalents.improvedExpose then
+			exposeTimeLeft, exposeActive = GetExposeArmorTimeLeftForTarget()
 		end
-	end
 	
 	lastComboPoints = comboPoints
 	lastSliceAndDiceActive = sliceAndDiceActive
@@ -655,7 +465,7 @@ local function UpdateDisplay()
 	if activeTalents.improvedExpose then
 		-- Potential is fixed 30s; show only at 5 combo points on an enemy
 		if comboPoints == 5 and hasEnemy then
-			local exposePotential = CalculateExposePotentialDuration(comboPoints)
+			local exposePotential = EXPOSE_ARMOR_DURATION
 			trackers.expose.potentialBar:SetMinMaxValues(0, universalMaxDuration)
 			trackers.expose.potentialBar:SetValue(exposePotential)
 			trackers.expose.potentialBar:Show()
@@ -707,57 +517,21 @@ local function OnEvent()
 	if event == "PLAYER_TARGET_CHANGED" then
 		RefreshComboPoints()
 		if LateralDB then UpdateDisplay() end
-		-- ensure we cache player GUID once login is complete
 		if not playerGUID then local exists, guid = UnitExists("PLAYER"); if exists then playerGUID = guid end end
-	elseif event == "PLAYER_AURAS_CHANGED" then
-		if LateralDB then UpdateDisplay() end
-	elseif event == "ACTIONBAR_UPDATE_USABLE" then
-		if LateralDB then UpdateDisplay() end
+
 	elseif event == "PLAYER_COMBO_POINTS" then
 		RefreshComboPoints()
 		if LateralDB then UpdateDisplay() end
-	-- Combat-log handling for Expose Armor application/removal
-	--[[
-	elseif event == "CHAT_MSG_SPELL_PERIODIC_CREATURE_DAMAGE" then
-		for unit, effect in string.gfind(arg1, '(.+) is afflicted by (.+)%.') do
-			if NormalizeEffectName(effect) == "Expose Armor" then
-				-- map to current target GUID if the afflicted unit is our current target
-				if UnitExists("target") and UnitName("target") == unit then
-					local exists, guid = UnitExists("TARGET")
-					if exists and guid then
-						exposeTimers[guid] = { starts = GetTime(), ends = GetTime() + EXPOSE_ARMOR_DURATION }
-					end
-				end
-				if LateralDB then UpdateDisplay() end
-			end
-		end
-	elseif event == "CHAT_MSG_SPELL_AURA_GONE_OTHER" then
-		for effect, unit in string.gfind(arg1, '(.+) fades from (.+)%.') do
-			if effect == "Expose Armor" then
-				-- clear only if it matches our current target
-				if UnitExists("target") and UnitName("target") == unit then
-					local exists, guid = UnitExists("TARGET")
-					if exists and guid then exposeTimers[guid] = nil end
-				end
-				if LateralDB then UpdateDisplay() end
-			end
-		end
-	elseif event == "CHAT_MSG_SPELL_BREAK_AURA" then
-		for unit, effect in string.gfind(arg1, "(.+)'s (.+) is removed%.") do
-			if effect == "Expose Armor" then
-				if UnitExists("target") and UnitName("target") == unit then
-					local exists, guid = UnitExists("TARGET")
-					if exists and guid then exposeTimers[guid] = nil end
-				end
-				if LateralDB then UpdateDisplay() end
-			end
-		end
-		--]]
+
 	elseif event == "UNIT_CASTEVENT" then
 		-- args: casterGUID, targetGUID, type, spellId
 		local casterGUID, targetGUID, evType, spellId = arg1, arg2, arg3, arg4
 		if not playerGUID then local exists, guid = UnitExists("PLAYER"); if exists then playerGUID = guid end end
-		-- Mapping: arg1=casterGUID, arg2=targetGUID, arg3=event type, arg4=spellId
+
+		if LateralDB and LateralDB.debug and casterGUID and playerGUID and casterGUID == playerGUID then
+			LatPrint(string.format("DEBUG: %s | %s | %s | %s | %s", tostring(arg1), tostring(arg2), tostring(arg3), tostring(arg4), tostring(arg5)))
+		end
+
 		if evType == "CAST" then
 			if spellId == 11198 and playerGUID and targetGUID and casterGUID == playerGUID then
 				-- schedule a pending apply to be finalized after latency window
@@ -768,6 +542,30 @@ local function OnEvent()
 				end
 				pendingExpose = { guid = targetGUID, applyAt = GetTime() + delay }
 				lastExposeGuid = targetGUID
+			end
+			-- Slice and Dice (no target checks) spellId 6774
+			if spellId == 6774 and playerGUID and casterGUID == playerGUID then
+				local cpUsed = GetComboPointsUsed() or 0
+				if cpUsed < 1 then cpUsed = 1 end
+				if cpUsed > 5 then cpUsed = 5 end
+				local duration = CalculatePotentialDuration(cpUsed)
+				sndManualTimer = { starts = GetTime(), ends = GetTime() + duration }
+			end
+			-- Envenom (no target checks) spellId 52531
+			if spellId == 52531 and playerGUID and casterGUID == playerGUID and activeTalents.envenom then
+				local cpUsed = GetComboPointsUsed() or 0
+				if cpUsed < 1 then cpUsed = 1 end
+				if cpUsed > 5 then cpUsed = 5 end
+				local duration = CalculateEnvenomPotentialDuration(cpUsed)
+				envenomManualTimer = { starts = GetTime(), ends = GetTime() + duration }
+			end
+			-- Taste for Blood (no target checks) spellId 11275
+			if spellId == 11275 and playerGUID and casterGUID == playerGUID and activeTalents.tasteForBlood then
+				local cpUsed = GetComboPointsUsed() or 0
+				if cpUsed < 1 then cpUsed = 1 end
+				if cpUsed > 5 then cpUsed = 5 end
+				local duration = CalculateTasteForBloodPotentialDuration(cpUsed)
+				tfbManualTimer = { starts = GetTime(), ends = GetTime() + duration }
 			end
 		end
 	elseif event == "CHAT_MSG_SPELL_SELF_DAMAGE" then
@@ -791,7 +589,6 @@ local function OnEvent()
 		end
 
 		if spellName == "Expose Armor" and failedTarget then
-			-- cancel only the pending apply, do not touch existing active timers
 			if pendingExpose then pendingExpose = nil end
 		end
 	elseif event == "CHAT_MSG_COMBAT_HOSTILE_DEATH" or event == "CHAT_MSG_COMBAT_HONOR_GAIN" then
@@ -805,17 +602,13 @@ local function OnEvent()
 	end
 	
 	if event == "ADDON_LOADED" and arg1 == addonName then
-		
-		-- Initialize saved variables
 		LateralDB = LateralDB or {}
-		
 		for key, value in pairs(defaultSettings) do
 			if LateralDB[key] == nil then
 				LateralDB[key] = value
 			end
 		end
 		
-		-- Position frames at fixed default locations
 		trackers.snd.frame:ClearAllPoints()
 		trackers.snd.frame:SetPoint("CENTER", UIParent, "CENTER", 0, -148)
 
@@ -828,7 +621,6 @@ local function OnEvent()
 		trackers.expose.frame:ClearAllPoints()
 		trackers.expose.frame:SetPoint("TOP", trackers.envenom.frame, "BOTTOM", 0, -FRAME_SPACING)
 		
-		-- Print loaded message now that addon is fully initialized
 		LatPrint("Lateral loaded. Type /lat for commands.")
 	elseif event == "PLAYER_ENTERING_WORLD" then
 		-- Cache talent state and begin updates
@@ -854,26 +646,16 @@ local function OnEvent()
 	end
 end
 
-
-
--- Register events
 frame:RegisterEvent("ADDON_LOADED")
 frame:RegisterEvent("PLAYER_ENTERING_WORLD")
 frame:RegisterEvent("PLAYER_ENTER_COMBAT")
 frame:RegisterEvent("PLAYER_TARGET_CHANGED")
-frame:RegisterEvent("PLAYER_AURAS_CHANGED")
-frame:RegisterEvent("ACTIONBAR_UPDATE_USABLE")
 frame:RegisterEvent("LEARNED_SPELL_IN_TAB")
-frame:RegisterEvent("CHAT_MSG_SPELL_AURA_GONE_OTHER")
-frame:RegisterEvent("CHAT_MSG_SPELL_BREAK_AURA")
-frame:RegisterEvent("CHAT_MSG_SPELL_PERIODIC_CREATURE_DAMAGE")
 frame:RegisterEvent("CHAT_MSG_SPELL_SELF_DAMAGE")
 frame:RegisterEvent("UNIT_CASTEVENT")
 frame:RegisterEvent("CHAT_MSG_COMBAT_HOSTILE_DEATH")
 frame:RegisterEvent("CHAT_MSG_COMBAT_HONOR_GAIN")
 frame:RegisterEvent("PLAYER_COMBO_POINTS")
-
-
 frame:SetScript("OnEvent", OnEvent)
 
 -- Slash commands
@@ -899,10 +681,16 @@ SlashCmdList["LATERAL"] = function(msg)
 			trackers.envenom.frame:Hide()
 			trackers.expose.frame:Hide()
 		end
-
-
+	elseif msg == "debug" then
+		LateralDB.debug = not LateralDB.debug
+		if LateralDB.debug then
+			LatPrint("Lateral: Debug enabled")
+		else
+			LatPrint("Lateral: Debug disabled")
+		end
 	else
 		LatPrint("Lateral Commands:")
 		LatPrint("/lat toggle - Enable/disable the tracker")
+		LatPrint("/lat debug  - Toggle debug logging for UNIT_CASTEVENT")
 	end
 end
