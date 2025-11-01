@@ -320,24 +320,6 @@ local function GetEnvenomTimeLeft()
 	return 0
 end
 
-local function GetImprovedSliceAndDiceRank()
-	local talentPos = GetTalentPosition("Improved Blade Tactics")
-	if talentPos then
-		local name, iconTexture, tier, column, rank, maxRank = GetTalentInfo(talentPos[1], talentPos[2])
-		return rank or 0
-	end
-	return 0
-end
-
-local function GetTasteForBloodRank()
-	local talentPos = GetTalentPosition("Taste for Blood")
-	if talentPos then
-		local name, iconTexture, tier, column, rank, maxRank = GetTalentInfo(talentPos[1], talentPos[2])
-		return rank or 0
-	end
-	return 0
-end
-
 -- Generic talent helpers and cached state
 local function GetTalentRankByName(talentName)
 	local talentPos = GetTalentPosition(talentName)
@@ -356,7 +338,7 @@ local activeTalents = {
 
 local function UpdateTalentState()
 	activeTalents.envenom = GetTalentRankByName("Envenom") > 0
-	activeTalents.tasteForBlood = GetTasteForBloodRank() > 0
+	activeTalents.tasteForBlood = GetTalentRankByName("Taste for Blood") > 0
 	activeTalents.improvedExpose = GetTalentRankByName("Improved Expose Armor") > 0
 end
 
@@ -366,7 +348,7 @@ local function CalculatePotentialDuration(comboPoints)
 	end
 	
 	local baseDuration = SND_DURATIONS[comboPoints] or SND_DURATIONS[5]
-	local talentRank = GetImprovedSliceAndDiceRank()
+	local talentRank = GetTalentRankByName("Improved Blade Tactics")
 	local talentBonus = talentRank * 0.15 -- 15% per rank
 	local finalDuration = baseDuration * (1 + talentBonus)
 	
@@ -375,7 +357,7 @@ end
 
 local function CalculateMaxDuration()
 	local baseDuration = SND_DURATIONS[5] -- 5 combo points max
-	local talentRank = GetImprovedSliceAndDiceRank()
+	local talentRank = GetTalentRankByName("Improved Blade Tactics")
 	local talentBonus = talentRank * 0.15
 	local maxDuration = baseDuration * (1 + talentBonus)
 	
@@ -388,7 +370,7 @@ local function CalculateTasteForBloodPotentialDuration(comboPoints)
 	end
 	
 	local baseDuration = RUPTURE_DURATIONS[comboPoints] or RUPTURE_DURATIONS[5]
-	local talentRank = GetTasteForBloodRank()
+	local talentRank = GetTalentRankByName("Taste for Blood")
 	local talentBonus = talentRank * 2 -- 2 seconds per rank
 	local finalDuration = baseDuration + talentBonus
 	
@@ -397,7 +379,7 @@ end
 
 local function CalculateTasteForBloodMaxDuration()
 	local baseDuration = RUPTURE_DURATIONS[5] -- 5 combo points max
-	local talentRank = GetTasteForBloodRank()
+	local talentRank = GetTalentRankByName("Taste for Blood")
 	local talentBonus = talentRank * 2 -- 2 seconds per rank
 	local maxDuration = baseDuration + talentBonus
 	
@@ -796,7 +778,7 @@ local function OnEvent()
 		
 		-- Print loaded message now that addon is fully initialized
 		LatPrint("Lateral loaded. Type /lat for commands.")
-	elseif event == "PLAYER_LOGIN" then
+	elseif event == "PLAYER_ENTERING_WORLD" then
 		-- Cache talent state and begin updates
 		UpdateTalentState()
 		-- Set up update timer
@@ -808,7 +790,7 @@ local function OnEvent()
 				frame.updateTimer = 0
 			end
 		end)
-	elseif event == "LEARNED_SPELL_IN_TAB" then
+	elseif event == "LEARNED_SPELL_IN_TAB" or "PLAYER_ENTER_COMBAT" then
 		UpdateTalentState()
 		if LateralDB then UpdateDisplay() end
 	end
@@ -818,7 +800,8 @@ end
 
 -- Register events
 frame:RegisterEvent("ADDON_LOADED")
-frame:RegisterEvent("PLAYER_LOGIN")
+frame:RegisterEvent("PLAYER_ENTERING_WORLD")
+frame:RegisterEvent("PLAYER_ENTER_COMBAT")
 frame:RegisterEvent("PLAYER_TARGET_CHANGED")
 frame:RegisterEvent("PLAYER_AURAS_CHANGED")
 frame:RegisterEvent("ACTIONBAR_UPDATE_USABLE")
