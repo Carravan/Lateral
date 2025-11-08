@@ -1,19 +1,23 @@
 # Lateral
-Turtle WoW Rogue Slice and Dice / Envenom / Taste for Blood / Expose Armor tracker, vaguely inspired by Cutup/Julienne.
-- Intended for use at Lv60 with highest ranks
+Turtle WoW Rogue timer tracker, vaguely inspired by Cutup/Julienne.
 - [SuperWoW](https://github.com/balakethelock/SuperWoW) is **REQUIRED**
 
-<img width="313" height="132" alt="image" src="https://github.com/user-attachments/assets/08941e0b-7dd0-4920-8f73-dae3c248e096" />
+<img width="306" height="125" alt="image" src="https://github.com/user-attachments/assets/233d4f66-a8cc-4872-9453-7c802fcfe89e" />
 
-Lateral will show a bar in the center of your screen indicating:
-* Duration of active SnD (yellow), left/white number and potential duration of SnD, based on the CP of your current target (blue), right/green number
-* Do the same for Taste for Blood, Envenom, Expose Armor
+Lateral will show bars which represent
+* Slice and Dice
+* Taste for Blood
+* Envenom
+* Expose Armor
+in the center of your screen.
 
-Slash command alias:
+Each tracker bar shows
+* Remaining duration, represented by the top-layer bar and the number in seconds remaining in white
+* Potential duration, represented by the bottom-layer bar and the potential duration of the buff/debuff in green
+
+* Taste for Blood additionally shows the damage increase of your active Taste for Blood
+* Tracker bars are only active when their respective talents are active
+* Expose Armor will only show a potential bar with 5CP
+
+Slash commands:
 **/lateral** or **/lat**
-
-Available commands:
-* /lat toggle - Enable/disable the tracker
-* /lat debug - UNIT_CASTEVENT logging to chat
-
-Look and feel has to be adjusted by editing Lateral.lua (sorry)
