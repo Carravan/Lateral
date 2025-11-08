@@ -17,7 +17,7 @@ Each tracker bar shows
 * Potential duration, represented by the bottom-layer bar and the potential duration of the buff/debuff in green
 
 Additionally
-* Taste for Blood shows the damage increase of your active Taste for Blood 
+* Taste for Blood shows the damage increase of your active buff 
 * Expose Armor will only show a potential bar with 5CP
 * Tracker bars are only active when their respective talents are active (except SnD)
 
