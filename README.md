@@ -9,12 +9,12 @@ Lateral will show bars which represent
 * Taste for Blood
 * Envenom
 * Expose Armor
+
 in the center of your screen.
 
 Each tracker bar shows
 * Remaining duration, represented by the top-layer bar and the number in seconds remaining in white
 * Potential duration, represented by the bottom-layer bar and the potential duration of the buff/debuff in green
-
 * Taste for Blood additionally shows the damage increase of your active Taste for Blood
 * Tracker bars are only active when their respective talents are active
 * Expose Armor will only show a potential bar with 5CP
