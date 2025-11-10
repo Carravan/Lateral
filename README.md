@@ -2,7 +2,8 @@
 Turtle WoW Rogue timer tracker, vaguely inspired by Cutup/Julienne.
 - [SuperWoW](https://github.com/balakethelock/SuperWoW) is **REQUIRED**
 
-SuperWoW is used for the addon to remain mostly functionality at buffcap.
+SuperWoW is used for the addon to remain mostly functional at buffcap.
+All timer bars, Dispatch, Nightblade will continue to work. TotT, Relentless Strikes will fail.
 
 <img width="316" height="188" alt="image" src="https://github.com/user-attachments/assets/4b26fc16-cd28-45ba-82ba-2e7e9ddc75a1" />
 
