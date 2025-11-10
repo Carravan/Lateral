@@ -1,11 +1,16 @@
 local addonName = "Lateral"
 local frame = CreateFrame("Frame", "LateralTrackerFrame", UIParent)
+Lateral = Lateral or {}
 
 local FRAME_WIDTH = 250
 local FRAME_HEIGHT = 30
 local FRAME_SPACING = 5
 local UPDATE_INTERVAL = 0.05
 local DEFAULT_FONT_SIZE = 16
+local DEFAULT_PROC_ICON_SIZE = 30
+local DEFAULT_PROC_TIMER_FONT_SIZE = 16
+local DEFAULT_PROC_STACK_FONT_SIZE = 14
+local DEFAULT_PROC_ICON_SPACING = 5
 local DEFAULT_POS_X = 0
 local DEFAULT_POS_Y = -148
 
@@ -20,6 +25,16 @@ local ENVENOM_DURATIONS = {12, 16, 20, 24, 28}
 local EXPOSE_ARMOR_DURATION = 30
 local EXPOSE_ARMOR_RANKS = {8647, 8649, 8650, 11197, 11198}
 
+local TRACKED_BUFFS = {"Tricks of the Trade", "Relentless Strikes"}
+local TRACKED_PROCCS = {52561, 52563}
+
+local powaSurrogate = {
+	["Tricks of the Trade"] = "Interface\\Icons\\INV_Misc_Key_03",
+	["Relentless Strikes"] = "Interface\\Icons\\Ability_Warrior_DecisiveStrike",
+	[52561] = "Interface\\Icons\\Ability_Rogue_SliceDice",
+	[52563] = "Interface\\Icons\\Spell_Shadow_Curse"
+}
+
 local defaultSettings = {
 	enabled = true,
 	debug = false,
@@ -27,6 +42,10 @@ local defaultSettings = {
 	frameHeight = FRAME_HEIGHT,
 	frameSpacing = FRAME_SPACING,
 	fontSize = DEFAULT_FONT_SIZE,
+	procIconSize = DEFAULT_PROC_ICON_SIZE,
+	procTimerFontSize = DEFAULT_PROC_TIMER_FONT_SIZE,
+	procStackFontSize = DEFAULT_PROC_STACK_FONT_SIZE,
+	procIconSpacing = DEFAULT_PROC_ICON_SPACING,
 	framePosX = DEFAULT_POS_X,
 	framePosY = DEFAULT_POS_Y
 }
@@ -37,19 +56,18 @@ local activeTalents = {
 	improvedExpose = false
 }
 
-local exposeTimers = {}
+Lateral.exposeTimers = Lateral.exposeTimers or {}
 local playerGUID = nil
-local lastExposeGuid = nil
-local pendingExpose = nil
+Lateral.pendingExpose = Lateral.pendingExpose or nil
 local sndManualTimer = nil
 local tfbManualTimer = nil
 local envenomManualTimer = nil
-local lastShowFrame = nil
 local lastComboPoints = nil
 local lastSliceAndDiceActive = nil
 local trackers = {}
 trackers.comboPoints = 0
 trackers.previousComboPoints = 0
+local procIcons = {}
 
 local function LatPrint(message)
 	DEFAULT_CHAT_FRAME:AddMessage("[|cff00ff00Lat|cfffffffferal] " .. tostring(message))
@@ -143,6 +161,19 @@ local function CreateStatusBar(parent, color, frameLevel)
 	return bar
 end
 
+local tooltipscan = CreateFrame("GameTooltip", "LateralBuffTooltip", nil, "GameTooltipTemplate")
+tooltipscan:SetOwner(WorldFrame, "ANCHOR_NONE")
+
+local function GetBuffName(buffIndex)
+	tooltipscan:SetPlayerBuff(buffIndex)
+	local toolTipText1 = getglobal("LateralBuffTooltipTextLeft1")
+	local toolTipText2 = getglobal("LateralBuffTooltipTextLeft2")
+	if toolTipText1 then
+		return toolTipText1:GetText(), toolTipText2:GetText()
+	end
+	return nil
+end
+
 -- Helper function to create text elements
 local function CreateTextElement(parent, point, xOffset, color, size, outline)
 	local text = parent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -201,6 +232,159 @@ trackers.expose.potentialText:SetDrawLayer("OVERLAY", 3)
 trackers.expose.potentialText2 = CreateTextElement(trackers.expose.potentialBar, "RIGHT", -5, {0.16, 1, 0.01, 1}, 16)
 trackers.expose.activeText = CreateTextElement(trackers.expose.activeBar, "LEFT", 5, {1, 1, 1, 1}, 16, "OUTLINE")
 
+-- Proc icon helpers (above snd bar, anchored to LateralTrackerFrame)
+local function GetProcIconPath(key)
+	local p = powaSurrogate and powaSurrogate[key]
+	return p or "Interface\\Icons\\INV_Misc_QuestionMark"
+end
+
+local function HasActiveProcs()
+	for _, meta in pairs(procIcons) do
+		if meta.ends and (meta.ends - GetTime()) > 0 then
+			return true
+		end
+	end
+	return false
+end
+
+local function EnsureProcIcon(key)
+	local meta = procIcons[key]
+	if meta and meta.frame then return meta end
+
+	local size = (LateralDB and LateralDB.procIconSize) or DEFAULT_PROC_ICON_SIZE
+	local f = CreateFrame("Frame", nil, trackers.snd.frame)
+	f:SetWidth(size)
+	f:SetHeight(size)
+	f:SetFrameStrata("MEDIUM")
+	f:SetFrameLevel(trackers.snd.frame:GetFrameLevel() + 5)
+
+	local tex = f:CreateTexture(nil, "ARTWORK")
+	tex:SetAllPoints(f)
+	tex:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+	tex:SetTexture(GetProcIconPath(key))
+
+	local timeText = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+	timeText:SetPoint("CENTER", f, "CENTER", 0, 0)
+	timeText:SetFont("Interface\\AddOns\\Lateral\\ABF.ttf", (LateralDB and LateralDB.procTimerFontSize) or DEFAULT_PROC_TIMER_FONT_SIZE, "OUTLINE")
+	timeText:SetTextColor(1, 1, 1, 1)
+	timeText:SetDrawLayer("OVERLAY", 3)
+
+	local stackText = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+	stackText:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -2, 2)
+	stackText:SetFont("Interface\\AddOns\\Lateral\\ABF.ttf", (LateralDB and LateralDB.procStackFontSize) or DEFAULT_PROC_STACK_FONT_SIZE, "OUTLINE")
+	stackText:SetTextColor(1, 0.85, 0, 1)
+	stackText:SetText("")
+	stackText:SetDrawLayer("OVERLAY", 4)
+
+	procIcons[key] = { frame = f, texture = tex, timeText = timeText, stackText = stackText, starts = 0, ends = 0, stacks = nil, iconKey = key }
+	return procIcons[key]
+end
+
+local function LayoutProcIcons()
+	local size = (LateralDB and LateralDB.procIconSize) or DEFAULT_PROC_ICON_SIZE
+	local spacing = ((LateralDB and LateralDB.procIconSpacing) or DEFAULT_PROC_ICON_SPACING)
+	local index = 0
+	-- Hide all first to avoid stale anchors causing visual overlap
+	for _, meta in pairs(procIcons) do
+		if meta.frame then meta.frame:Hide() end
+	end
+	-- Build a deterministic list of active keys and lay them out left-to-right
+	local now = GetTime()
+	local activeKeys = {}
+	for key, meta in pairs(procIcons) do
+		if meta and meta.ends and (meta.ends - now) > 0 then
+			table.insert(activeKeys, key)
+		end
+	end
+	table.sort(activeKeys, function(a, b)
+		return tostring(a) < tostring(b)
+	end)
+	for i = 1, table.getn(activeKeys) do
+		local key = activeKeys[i]
+		local meta = procIcons[key]
+		if meta and meta.frame and meta.ends and (meta.ends - GetTime()) > 0 then
+			meta.frame:ClearAllPoints()
+			meta.frame:SetPoint("BOTTOMLEFT", trackers.snd.frame, "TOPLEFT", index * (size + spacing), spacing)
+			meta.frame:Show()
+			index = index + 1
+		end
+	end
+end
+
+local function ResizeProcIcons()
+	local size = (LateralDB and LateralDB.procIconSize) or DEFAULT_PROC_ICON_SIZE
+	local timerFont = (LateralDB and LateralDB.procTimerFontSize) or DEFAULT_PROC_TIMER_FONT_SIZE
+	local stackFont = (LateralDB and LateralDB.procStackFontSize) or DEFAULT_PROC_STACK_FONT_SIZE
+	for _, meta in pairs(procIcons) do
+		if meta.frame then
+			meta.frame:SetWidth(size)
+			meta.frame:SetHeight(size)
+			if meta.timeText then
+				meta.timeText:SetFont("Interface\\AddOns\\Lateral\\ABF.ttf", timerFont, "OUTLINE")
+			end
+			if meta.stackText then
+				meta.stackText:SetFont("Interface\\AddOns\\Lateral\\ABF.ttf", stackFont, "OUTLINE")
+			end
+		end
+	end
+	LayoutProcIcons()
+end
+
+-- Deterministic: start or refresh a proc by key with an absolute end time
+local function StartOrRefreshProc(key, absoluteEnds, stacks)
+	if not key or not absoluteEnds then return end
+	local meta = EnsureProcIcon(key)
+	meta.starts = GetTime()
+	meta.ends = absoluteEnds
+	meta.stacks = stacks
+	meta.texture:SetTexture(GetProcIconPath(key))
+	if stacks and tonumber(stacks) then
+		local s = tonumber(stacks)
+		if s then s = math.floor(s + 0.5) end
+		meta.stackText:SetText(tostring(s or stacks))
+		meta.stackText:Show()
+	else
+		meta.stackText:SetText("")
+		meta.stackText:Hide()
+	end
+	meta.frame:Show()
+	LayoutProcIcons()
+end
+
+local function UpdateProcIcons()
+	-- Update countdowns and clean up expired
+	local now = GetTime()
+	for key, meta in pairs(procIcons) do
+		if meta.ends and (meta.ends - now) > 0 then
+			local remain = meta.ends - now
+			if remain < 0 then remain = 0 end
+			meta.timeText:SetText(string.format("%.1f", remain))
+			meta.frame:Show()
+		else
+			if meta.frame then meta.frame:Hide() end
+		end
+	end
+	LayoutProcIcons()
+end
+
+function Lateral_UpdateProcIcons()
+	UpdateProcIcons()
+end
+
+-- Global OnUpdate handler with no upvalues (Vanilla upvalue limit safety)
+function Lateral_OnUpdate()
+	Lateral.updateTimer = (Lateral.updateTimer or 0) + arg1
+	if Lateral.updateTimer >= UPDATE_INTERVAL then
+		if Lateral.pendingExpose and GetTime() >= Lateral.pendingExpose.applyAt then
+			Lateral.exposeTimers[Lateral.pendingExpose.guid] = { starts = GetTime(), ends = GetTime() + EXPOSE_ARMOR_DURATION }
+			Lateral.pendingExpose = nil
+		end
+		Lateral_UpdateProcIcons()
+		Lateral_UpdateDisplay()
+		Lateral.updateTimer = 0
+	end
+end
+
 local function ApplyLayoutSettings()
 	if not LateralDB then return end
 	-- Dimensions
@@ -238,6 +422,7 @@ local function ApplyLayoutSettings()
 		trackers.expose.activeText:SetFont(fontPath, size, "OUTLINE")
 	end
 	SetAllFonts(fontSize)
+	ResizeProcIcons()
 end
 
 local function CalculatePotentialDuration(comboPoints)
@@ -306,7 +491,7 @@ end
 local function GetExposeArmorTimeLeftForTarget()
     local exists, guid = UnitExists("TARGET")
     if not exists or not guid then return 0, false end
-    local timer = exposeTimers[guid]
+    local timer = Lateral.exposeTimers[guid]
     if timer and timer.ends then
         local remaining = timer.ends - GetTime()
         if remaining > 0 then
@@ -344,6 +529,31 @@ local function UpdateDisplay()
 	
 	local comboPoints = GetComboPointsOnTarget()
 	local hasEnemy = UnitExists("target") and UnitCanAttack("player", "target")
+	
+	do
+		local buffIndex = 0
+		while true do
+			local index, untilCancelled = GetPlayerBuff(buffIndex, "HELPFUL")
+			if index < 0 then break end
+			local buffName, buffText = GetBuffName(index)
+			if has_value(TRACKED_BUFFS, buffName) then
+				local timeLeft = GetPlayerBuffTimeLeft(index)
+				local stacks
+				if buffName == TRACKED_BUFFS[2] then
+					local _, _, percentage = strfind(buffText, "(%d+)%%")
+					if percentage then stacks = tonumber(percentage) / 5 end
+				elseif buffName == TRACKED_BUFFS[1] then
+					local _, _, percentage = strfind(buffText, "(%d+)%%")
+					if percentage then stacks = tonumber(percentage) / 2 end
+				end
+				if timeLeft and timeLeft > 0 then
+					StartOrRefreshProc(buffName, GetTime() + timeLeft, stacks)
+				end
+			end
+			buffIndex = buffIndex + 1
+		end
+	end
+	
 	local sliceAndDiceActive = false
 	local eventTimeLeft = 0
 	if sndManualTimer and sndManualTimer.ends then
@@ -377,6 +587,7 @@ local function UpdateDisplay()
 	lastSliceAndDiceActive = sliceAndDiceActive
 	
 	local shouldShowBars = (comboPoints > 0 and hasEnemy) or sliceAndDiceActive or (activeTalents.tasteForBlood and tasteForBloodActive) or (activeTalents.envenom and envenomActive) or (activeTalents.improvedExpose and exposeActive)
+	local hasProcs = HasActiveProcs()
 	
 	trackers.tfb.frame:ClearAllPoints()
 	trackers.envenom.frame:ClearAllPoints()
@@ -526,7 +737,7 @@ local function UpdateDisplay()
 		trackers.expose.activeText:SetText("")
 	end
 	
-	if shouldShowBars then
+	if shouldShowBars or hasProcs then
 		trackers.snd.frame:Show()
 		if activeTalents.tasteForBlood then trackers.tfb.frame:Show() else trackers.tfb.frame:Hide() end
 		if activeTalents.envenom then trackers.envenom.frame:Show() else trackers.envenom.frame:Hide() end
@@ -537,6 +748,11 @@ local function UpdateDisplay()
 		trackers.envenom.frame:Hide()
 		trackers.expose.frame:Hide()
 	end
+end
+
+-- Define the display wrapper after UpdateDisplay is in scope
+function Lateral_UpdateDisplay()
+	UpdateDisplay()
 end
 
 -- Event handling
@@ -566,8 +782,7 @@ local function OnEvent()
 				if nping and nping > 0 and nping < 500 then
 					delay = 0.05 + (nping / 1000.0)
 				end
-				pendingExpose = { guid = targetGUID, applyAt = GetTime() + delay }
-				lastExposeGuid = targetGUID
+				Lateral.pendingExpose = { guid = targetGUID, applyAt = GetTime() + delay }
 			end
 			
 			-- Slice and Dice
@@ -596,6 +811,11 @@ local function OnEvent()
 				local duration = CalculateTasteForBloodPotentialDuration(cpUsed)
 				tfbManualTimer = { starts = GetTime(), ends = GetTime() + duration, cp = cpUsed }
 			end
+			
+			-- T3.5 proccs
+			if has_value(TRACKED_PROCCS, spellId) and playerGUID and casterGUID == playerGUID then
+				StartOrRefreshProc(spellId, GetTime() + 6, nil)
+			end
 		end
 	elseif event == "CHAT_MSG_SPELL_SELF_DAMAGE" then
 		-- Detect Expose Armor failures and cancel the last started timer
@@ -618,20 +838,20 @@ local function OnEvent()
 		end
 
 		if spellName == "Expose Armor" and failedTarget then
-			if pendingExpose then pendingExpose = nil end
+			if Lateral.pendingExpose then Lateral.pendingExpose = nil end
 		end
 		
 	elseif event == "CHAT_MSG_COMBAT_HOSTILE_DEATH" or event == "CHAT_MSG_COMBAT_HONOR_GAIN" then
 		for unit in string.gfind(arg1, '(.+) dies') do
 			if UnitExists("target") and UnitName("target") == unit then
 				local exists, guid = UnitExists("TARGET")
-				if exists and guid and exposeTimers[guid] then exposeTimers[guid] = nil end
+				if exists and guid and Lateral.exposeTimers[guid] then Lateral.exposeTimers[guid] = nil end
 				if LateralDB then UpdateDisplay() end
 			end
 		end
-	end
 	
-	if event == "ADDON_LOADED" and arg1 == addonName then
+	
+	elseif event == "ADDON_LOADED" and arg1 == addonName then
 		LateralDB = LateralDB or {}
 		for key, value in pairs(defaultSettings) do
 			if LateralDB[key] == nil then
@@ -651,21 +871,12 @@ local function OnEvent()
 		trackers.expose.frame:ClearAllPoints()
 		trackers.expose.frame:SetPoint("TOP", trackers.envenom.frame, "BOTTOM", 0, -(LateralDB.frameSpacing or FRAME_SPACING))
 		LatPrint("Lateral loaded. Type /lat to open settings.")
+		
 	elseif event == "PLAYER_ENTERING_WORLD" then
 		UpdateTalentState()
 		RefreshComboPoints()
-		frame.updateTimer = 0
-		frame:SetScript("OnUpdate", function()
-			frame.updateTimer = frame.updateTimer + arg1
-			if frame.updateTimer >= UPDATE_INTERVAL then
-				if pendingExpose and GetTime() >= pendingExpose.applyAt then
-					exposeTimers[pendingExpose.guid] = { starts = GetTime(), ends = GetTime() + EXPOSE_ARMOR_DURATION }
-					pendingExpose = nil
-				end
-				UpdateDisplay()
-				frame.updateTimer = 0
-			end
-		end)
+		Lateral.updateTimer = 0
+		frame:SetScript("OnUpdate", Lateral_OnUpdate)
 	elseif event == "LEARNED_SPELL_IN_TAB" or "PLAYER_ENTER_COMBAT" then
 		UpdateTalentState()
 		if LateralDB then UpdateDisplay() end
@@ -702,10 +913,15 @@ local lateralMenuArray = {
 	{text = "Enabled", toggle = "enabled", tooltip = "Enable/disable the tracker UI"},
 	{text = "Debug Logging", toggle = "debug", tooltip = "Toggle debug logging for UNIT_CASTEVENT"},
 	{text = "",},
-	{text = "Frame Width", editbox = { key = "frameWidth" }, tooltip = "Set frame width"},
-	{text = "Frame Height", editbox = { key = "frameHeight" }, tooltip = "Set frame height"},
-	{text = "Frame Spacing", editbox = { key = "frameSpacing" }, tooltip = "Set spacing between frames"},
-	{text = "Text Size", editbox = { key = "fontSize" }, tooltip = "Set text size for all tracker texts"},
+	{text = "Frame Width", editbox = { key = "frameWidth" }, tooltip = "Set bar width"},
+	{text = "Frame Height", editbox = { key = "frameHeight" }, tooltip = "Set bar height"},
+	{text = "Frame Spacing", editbox = { key = "frameSpacing" }, tooltip = "Set spacing between bars"},
+	{text = "Text Size", editbox = { key = "fontSize" }, tooltip = "Set text size for all bar texts"},
+	{text = "",},
+	{text = "Proc Icon Size", editbox = { key = "procIconSize" }, tooltip = "Set size of proc textures"},
+	{text = "Proc Timer Text Size", editbox = { key = "procTimerFontSize" }, tooltip = "Set font size for proc timer"},
+	{text = "Proc Stack Text Size", editbox = { key = "procStackFontSize" }, tooltip = "Set font size for proc stack"},
+	{text = "Proc Icon Spacing", editbox = { key = "procIconSpacing" }, tooltip = "Set horizontal spacing between proc textures"},
 	{text = "",},
 	{text = "Horizontal Position", editbox = { key = "framePosX" }, tooltip = "Set horizontal position"},
 	{text = "Vertical Position", editbox = { key = "framePosY" }, tooltip = "Set vertical position"},
