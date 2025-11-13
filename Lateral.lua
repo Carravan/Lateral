@@ -650,7 +650,6 @@ local function UpdateDisplay()
 			trackers.tfb.activeBar:SetValue(tfbTimeLeft)
 			trackers.tfb.activeBar:Show()
 			trackers.tfb.activeText:SetText(string.format("%.1f", tfbTimeLeft))
-			-- Show CP-based percentage text in center (cp at activation * 3%)
 			local cpForTfb = (tfbManualTimer and tfbManualTimer.cp) or lastComboPoints or comboPoints or 0
 			if cpForTfb < 1 then cpForTfb = 1 end
 			if cpForTfb > 5 then cpForTfb = 5 end
@@ -840,6 +839,18 @@ local function OnEvent()
 		if spellName == "Expose Armor" and failedTarget then
 			if Lateral.pendingExpose then Lateral.pendingExpose = nil end
 		end
+	
+	elseif event == "CHAT_MSG_SPELL_AURA_GONE_SELF" then
+		if arg1 == "Nightblade fades from you." then
+			local meta = procIcons[52563]
+			if meta then
+				meta.ends = 0
+				if meta.frame then meta.frame:Hide() end
+				if meta.timeText then meta.timeText:SetText("") end
+				if meta.stackText then meta.stackText:SetText(""); meta.stackText:Hide() end
+				LayoutProcIcons()
+			end
+		end
 		
 	elseif event == "CHAT_MSG_COMBAT_HOSTILE_DEATH" or event == "CHAT_MSG_COMBAT_HONOR_GAIN" then
 		for unit in string.gfind(arg1, '(.+) dies') do
@@ -890,6 +901,7 @@ frame:RegisterEvent("PLAYER_TARGET_CHANGED")
 frame:RegisterEvent("LEARNED_SPELL_IN_TAB")
 frame:RegisterEvent("CHAT_MSG_SPELL_SELF_DAMAGE")
 frame:RegisterEvent("UNIT_CASTEVENT")
+frame:RegisterEvent("CHAT_MSG_SPELL_AURA_GONE_SELF")
 frame:RegisterEvent("CHAT_MSG_COMBAT_HOSTILE_DEATH")
 frame:RegisterEvent("CHAT_MSG_COMBAT_HONOR_GAIN")
 frame:RegisterEvent("PLAYER_COMBO_POINTS")
