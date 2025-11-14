@@ -124,15 +124,19 @@ local function GetTalentRankByName(talentName)
 	local talentPos = GetTalentPosition(talentName)
 	if talentPos then
 		local name, iconTexture, tier, column, rank, maxRank = GetTalentInfo(talentPos[1], talentPos[2])
-		return rank or 0
+		if rank ~= nil and rank > 0 then
+			return rank
+		else
+			return nil
+		end
 	end
-	return 0
+	return nil
 end
 
 local function UpdateTalentState()
-	activeTalents.envenom = GetTalentRankByName("Envenom") > 0
-	activeTalents.tasteForBlood = GetTalentRankByName("Taste for Blood") > 0
-	activeTalents.improvedExpose = GetTalentRankByName("Improved Expose Armor") > 0
+	activeTalents.envenom = GetTalentRankByName("Envenom")
+	activeTalents.tasteForBlood = GetTalentRankByName("Taste for Blood")
+	activeTalents.improvedExpose = GetTalentRankByName("Improved Expose Armor")
 end
 
 local function CreateTrackerFrame(name, frameName, parent)
@@ -653,7 +657,7 @@ local function UpdateDisplay()
 			local cpForTfb = (tfbManualTimer and tfbManualTimer.cp) or lastComboPoints or comboPoints or 0
 			if cpForTfb < 1 then cpForTfb = 1 end
 			if cpForTfb > 5 then cpForTfb = 5 end
-			local percent = cpForTfb * 3
+			local percent = cpForTfb * activeTalents.tasteForBlood
 			if trackers.tfb.centerText then
 				trackers.tfb.centerText:SetText(string.format("%d%%", percent))
 				trackers.tfb.centerText:Show()
