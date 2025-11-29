@@ -26,13 +26,18 @@ local EXPOSE_ARMOR_DURATION = 30
 local EXPOSE_ARMOR_RANKS = {8647, 8649, 8650, 11197, 11198}
 
 local TRACKED_BUFFS = {"Tricks of the Trade", "Relentless Strikes"}
-local TRACKED_PROCCS = {52561, 52563}
+local TRACKED_PROCCS = {
+	[52561] = 6,
+	[52563] = 6,
+	[28866] = 15
+}
 
 local powaSurrogate = {
 	["Tricks of the Trade"] = "Interface\\Icons\\INV_Misc_Key_03",
 	["Relentless Strikes"] = "Interface\\Icons\\Ability_Warrior_DecisiveStrike",
 	[52561] = "Interface\\Icons\\Ability_Rogue_SliceDice",
-	[52563] = "Interface\\Icons\\Spell_Shadow_Curse"
+	[52563] = "Interface\\Icons\\Spell_Shadow_Curse",
+	[28866] = "Interface\\Icons\\INV_Trinket_Naxxramas04"
 }
 
 local defaultSettings = {
@@ -123,6 +128,7 @@ end
 local function GetTalentRankByName(talentName)
 	local talentPos = GetTalentPosition(talentName)
 	if talentPos then
+		
 		local name, iconTexture, tier, column, rank, maxRank = GetTalentInfo(talentPos[1], talentPos[2])
 		if rank ~= nil and rank > 0 then
 			return rank
@@ -816,8 +822,9 @@ local function OnEvent()
 			end
 			
 			-- T3.5 proccs
-			if has_value(TRACKED_PROCCS, spellId) and playerGUID and casterGUID == playerGUID then
-				StartOrRefreshProc(spellId, GetTime() + 6, nil)
+			if TRACKED_PROCCS[spellId] and playerGUID and casterGUID == playerGUID then
+				--local procDurationSeconds = TRACKED_PROCCS[spellId]
+				StartOrRefreshProc(spellId, GetTime() + TRACKED_PROCCS[spellId], nil)
 			end
 		end
 	elseif event == "CHAT_MSG_SPELL_SELF_DAMAGE" then
@@ -887,11 +894,6 @@ local function OnEvent()
 		trackers.expose.frame:SetPoint("TOP", trackers.envenom.frame, "BOTTOM", 0, -(LateralDB.frameSpacing or FRAME_SPACING))
 		LatPrint("Lateral loaded. Type /lat to open settings.")
 		
-	elseif event == "PLAYER_ENTERING_WORLD" then
-		UpdateTalentState()
-		RefreshComboPoints()
-		Lateral.updateTimer = 0
-		frame:SetScript("OnUpdate", Lateral_OnUpdate)
 	elseif event == "LEARNED_SPELL_IN_TAB" or "PLAYER_ENTER_COMBAT" then
 		UpdateTalentState()
 		if LateralDB then UpdateDisplay() end
@@ -899,7 +901,6 @@ local function OnEvent()
 end
 
 frame:RegisterEvent("ADDON_LOADED")
-frame:RegisterEvent("PLAYER_ENTERING_WORLD")
 frame:RegisterEvent("PLAYER_ENTER_COMBAT")
 frame:RegisterEvent("PLAYER_TARGET_CHANGED")
 frame:RegisterEvent("LEARNED_SPELL_IN_TAB")
