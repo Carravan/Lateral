@@ -9,7 +9,7 @@ All timer bars, Dispatch, Nightblade will continue to work. TotT, Relentless Str
 
 Lateral will show bars which represent
 * Slice and Dice
-* Taste for Blood
+* Taste for Blood and Rupture
 * Envenom
 * Expose Armor
 
