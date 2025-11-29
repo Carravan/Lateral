@@ -13,6 +13,7 @@ local DEFAULT_PROC_STACK_FONT_SIZE = 14
 local DEFAULT_PROC_ICON_SPACING = 5
 local DEFAULT_POS_X = 0
 local DEFAULT_POS_Y = -148
+local RUPTURE_BAR_HEIGHT = 2
 
 local SND_DURATIONS = {9, 12, 15, 18, 21}
 local SND_RANKS = {5171, 6774}
@@ -52,7 +53,8 @@ local defaultSettings = {
 	procStackFontSize = DEFAULT_PROC_STACK_FONT_SIZE,
 	procIconSpacing = DEFAULT_PROC_ICON_SPACING,
 	framePosX = DEFAULT_POS_X,
-	framePosY = DEFAULT_POS_Y
+	framePosY = DEFAULT_POS_Y,
+	ruptureBarHeight = RUPTURE_BAR_HEIGHT
 }
 
 local activeTalents = {
@@ -66,6 +68,8 @@ local activeTalents = {
 Lateral.exposeTimers = Lateral.exposeTimers or {}
 local playerGUID = nil
 Lateral.pendingExpose = Lateral.pendingExpose or nil
+Lateral.ruptureTimers = Lateral.ruptureTimers or {}
+Lateral.pendingRupture = Lateral.pendingRupture or nil
 local sndManualTimer = nil
 local tfbManualTimer = nil
 local envenomManualTimer = nil
@@ -240,6 +244,18 @@ trackers.tfb.potentialText:SetDrawLayer("OVERLAY", 3)
 trackers.tfb.potentialText2 = CreateTextElement(trackers.tfb.potentialBar, "RIGHT", -5, {0.16, 1, 0.01, 1}, 16)
 trackers.tfb.activeText = CreateTextElement(trackers.tfb.activeBar, "LEFT", 5, {1, 1, 1, 1}, 16, "OUTLINE")
 trackers.tfb.centerText = CreateTextElement(trackers.tfb.activeBar, "CENTER", 0, {1, 1, 1, 1}, 16, "OUTLINE")
+-- Create Rupture (target debuff) thin bar under TFB
+trackers.tfb.ruptureBar = CreateFrame("StatusBar", nil, trackers.tfb.frame)
+trackers.tfb.ruptureBar:SetStatusBarTexture("Interface\\AddOns\\Lateral\\Flat.tga")
+trackers.tfb.ruptureBar:SetStatusBarColor(1, 1, 1, 1)
+trackers.tfb.ruptureBar:SetMinMaxValues(0, 100)
+trackers.tfb.ruptureBar:SetValue(0)
+trackers.tfb.ruptureBar:ClearAllPoints()
+trackers.tfb.ruptureBar:SetPoint("BOTTOMLEFT", trackers.tfb.frame, "BOTTOMLEFT", 0, 0)
+trackers.tfb.ruptureBar:SetPoint("BOTTOMRIGHT", trackers.tfb.frame, "BOTTOMRIGHT", 0, 0)
+trackers.tfb.ruptureBar:SetHeight(2)
+trackers.tfb.ruptureBar:SetFrameLevel(trackers.tfb.activeBar:GetFrameLevel() + 1)
+trackers.tfb.ruptureBar:Hide()
 
 -- Create Envenom tracker
 trackers.envenom = {}
@@ -412,6 +428,10 @@ function Lateral_OnUpdate()
 			Lateral.exposeTimers[Lateral.pendingExpose.guid] = { starts = GetTime(), ends = GetTime() + EXPOSE_ARMOR_DURATION }
 			Lateral.pendingExpose = nil
 		end
+		if Lateral.pendingRupture and GetTime() >= Lateral.pendingRupture.applyAt then
+			Lateral.ruptureTimers[Lateral.pendingRupture.guid] = { starts = GetTime(), ends = GetTime() + (Lateral.pendingRupture.duration or 0) }
+			Lateral.pendingRupture = nil
+		end
 		Lateral_UpdateProcIcons()
 		Lateral_UpdateDisplay()
 		Lateral.updateTimer = 0
@@ -455,6 +475,13 @@ local function ApplyLayoutSettings()
 		trackers.expose.activeText:SetFont(fontPath, size, "OUTLINE")
 	end
 	SetAllFonts(fontSize)
+	-- Rupture bar height
+	if trackers.tfb and trackers.tfb.ruptureBar then
+		local rbHeight = tonumber(LateralDB.ruptureBarHeight or RUPTURE_BAR_HEIGHT)
+		if rbHeight < 0 then rbHeight = 0 end
+		trackers.tfb.ruptureBar:SetHeight(rbHeight)
+		if rbHeight == 0 then trackers.tfb.ruptureBar:Hide() end
+	end
 	ResizeProcIcons()
 end
 
@@ -497,6 +524,19 @@ local function GetExposeArmorTimeLeftForTarget()
     local exists, guid = UnitExists("TARGET")
     if not exists or not guid then return 0, false end
     local timer = Lateral.exposeTimers[guid]
+    if timer and timer.ends then
+        local remaining = timer.ends - GetTime()
+        if remaining > 0 then
+            return remaining, true
+        end
+    end
+    return 0, false
+end
+
+local function GetRuptureTimeLeftForTarget()
+    local exists, guid = UnitExists("TARGET")
+    if not exists or not guid then return 0, false end
+    local timer = Lateral.ruptureTimers[guid]
     if timer and timer.ends then
         local remaining = timer.ends - GetTime()
         if remaining > 0 then
@@ -588,6 +628,11 @@ local function UpdateDisplay()
 			exposeTimeLeft, exposeActive = GetExposeArmorTimeLeftForTarget()
 		end
 	
+	local ruptureTimeLeft, ruptureActive = 0, false
+	if activeTalents.tasteForBlood then
+		ruptureTimeLeft, ruptureActive = GetRuptureTimeLeftForTarget()
+	end
+	
 	lastComboPoints = comboPoints
 	lastSliceAndDiceActive = sliceAndDiceActive
 	
@@ -663,6 +708,19 @@ local function UpdateDisplay()
 				trackers.tfb.centerText:SetText(string.format("%d%%", percent))
 				trackers.tfb.centerText:Show()
 			end
+			-- Rupture landed bar
+			if ruptureActive and ruptureTimeLeft > 0 and trackers.tfb.ruptureBar then
+				local rbHeight = (LateralDB and tonumber(LateralDB.ruptureBarHeight or RUPTURE_BAR_HEIGHT))
+				if rbHeight > 0 then
+					trackers.tfb.ruptureBar:SetMinMaxValues(0, universalMaxDuration)
+					trackers.tfb.ruptureBar:SetValue(ruptureTimeLeft)
+					trackers.tfb.ruptureBar:Show()
+				else
+					trackers.tfb.ruptureBar:Hide()
+				end
+			else
+				if trackers.tfb.ruptureBar then trackers.tfb.ruptureBar:Hide() end
+			end
 		else
 			trackers.tfb.activeBar:Hide()
 			trackers.tfb.activeText:SetText("")
@@ -670,6 +728,7 @@ local function UpdateDisplay()
 				trackers.tfb.centerText:SetText("")
 				trackers.tfb.centerText:Hide()
 			end
+			if trackers.tfb.ruptureBar then trackers.tfb.ruptureBar:Hide() end
 		end
 	else
 		trackers.tfb.potentialBar:Hide()
@@ -677,6 +736,7 @@ local function UpdateDisplay()
 		trackers.tfb.potentialText:SetText("")
 		trackers.tfb.potentialText2:SetText("")
 		trackers.tfb.activeText:SetText("")
+		if trackers.tfb.ruptureBar then trackers.tfb.ruptureBar:Hide() end
 	end
 	
 	if activeTalents.envenom then
@@ -814,6 +874,15 @@ local function OnEvent()
 				if cpUsed > 5 then cpUsed = 5 end
 				local duration = CalculateTasteForBloodPotentialDuration(cpUsed)
 				tfbManualTimer = { starts = GetTime(), ends = GetTime() + duration, cp = cpUsed }
+				-- Schedule pending Rupture application for current target (cancel on miss like Expose)
+				if targetGUID then
+					local delay = 0.2
+					local _, _, nping = GetNetStats()
+					if nping and nping > 0 and nping < 500 then
+						delay = 0.05 + (nping / 1000.0)
+					end
+					Lateral.pendingRupture = { guid = targetGUID, applyAt = GetTime() + delay, duration = duration }
+				end
 			end
 			
 			-- T3.5 proccs
@@ -845,6 +914,9 @@ local function OnEvent()
 		if spellName == "Expose Armor" and failedTarget then
 			if Lateral.pendingExpose then Lateral.pendingExpose = nil end
 		end
+		if spellName == "Rupture" and failedTarget then
+			if Lateral.pendingRupture then Lateral.pendingRupture = nil end
+		end
 	
 	elseif event == "CHAT_MSG_SPELL_AURA_GONE_SELF" then
 		if arg1 == "Nightblade fades from you." then
@@ -862,7 +934,10 @@ local function OnEvent()
 		for unit in string.gfind(arg1, '(.+) dies') do
 			if UnitExists("target") and UnitName("target") == unit then
 				local exists, guid = UnitExists("TARGET")
-				if exists and guid and Lateral.exposeTimers[guid] then Lateral.exposeTimers[guid] = nil end
+				if exists and guid then
+					if Lateral.exposeTimers[guid] then Lateral.exposeTimers[guid] = nil end
+					if Lateral.ruptureTimers[guid] then Lateral.ruptureTimers[guid] = nil end
+				end
 				if LateralDB then UpdateDisplay() end
 			end
 		end
@@ -932,6 +1007,7 @@ local lateralMenuArray = {
 	{text = "Frame Height", editbox = { key = "frameHeight" }, tooltip = "Set bar height"},
 	{text = "Frame Spacing", editbox = { key = "frameSpacing" }, tooltip = "Set spacing between bars"},
 	{text = "Text Size", editbox = { key = "fontSize" }, tooltip = "Set text size for all bar texts"},
+	{text = "Rupture Bar Height", editbox = { key = "ruptureBarHeight" }, tooltip = "Set Rupture bar height (0 hides)"},
 	{text = "",},
 	{text = "Proc Icon Size", editbox = { key = "procIconSize" }, tooltip = "Set size of proc textures"},
 	{text = "Proc Timer Text Size", editbox = { key = "procTimerFontSize" }, tooltip = "Set font size for proc timer"},
