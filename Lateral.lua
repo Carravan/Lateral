@@ -58,7 +58,9 @@ local defaultSettings = {
 local activeTalents = {
 	envenom = false,
 	tasteForBlood = false,
-	improvedExpose = false
+	improvedExpose = false,
+	improvedBladeTactics = false,
+	universalMaxDuration = 0
 }
 
 Lateral.exposeTimers = Lateral.exposeTimers or {}
@@ -143,6 +145,27 @@ local function UpdateTalentState()
 	activeTalents.envenom = GetTalentRankByName("Envenom")
 	activeTalents.tasteForBlood = GetTalentRankByName("Taste for Blood")
 	activeTalents.improvedExpose = GetTalentRankByName("Improved Expose Armor")
+	activeTalents.improvedBladeTactics = GetTalentRankByName("Improved Blade Tactics")
+	-- Recompute and cache the universal max duration using current ranks
+	local maxDuration = 0
+	do
+		local base = SND_DURATIONS[5]
+		local rank = activeTalents.improvedBladeTactics or 0
+		local bonus = rank * 0.15
+		maxDuration = math.max(maxDuration, base * (1 + bonus))
+	end
+	if activeTalents.tasteForBlood then
+		local base = RUPTURE_DURATIONS[5]
+		local rank = activeTalents.tasteForBlood or 0
+		maxDuration = math.max(maxDuration, base + (rank * 2))
+	end
+	if activeTalents.envenom then
+		maxDuration = math.max(maxDuration, ENVENOM_DURATIONS[5])
+	end
+	if activeTalents.improvedExpose then
+		maxDuration = math.max(maxDuration, EXPOSE_ARMOR_DURATION)
+	end
+	activeTalents.universalMaxDuration = maxDuration
 end
 
 local function CreateTrackerFrame(name, frameName, parent)
@@ -441,10 +464,9 @@ local function CalculatePotentialDuration(comboPoints)
 	end
 	
 	local baseDuration = SND_DURATIONS[comboPoints]
-	local talentRank = GetTalentRankByName("Improved Blade Tactics")
+	local talentRank = activeTalents.improvedBladeTactics or 0
 	local talentBonus = talentRank * 0.15
 	local finalDuration = baseDuration * (1 + talentBonus)
-	
 	return finalDuration
 end
 
@@ -454,7 +476,7 @@ local function CalculateTasteForBloodPotentialDuration(comboPoints)
 	end
 	
 	local baseDuration = RUPTURE_DURATIONS[comboPoints]
-	local talentRank = GetTalentRankByName("Taste for Blood")
+	local talentRank = activeTalents.tasteForBlood or 0
 	local talentBonus = talentRank * 2
 	local finalDuration = baseDuration + talentBonus
 	
@@ -469,33 +491,6 @@ local function CalculateEnvenomPotentialDuration(comboPoints)
 	local baseDuration = ENVENOM_DURATIONS[comboPoints]
 	
 	return baseDuration
-end
-
-local function GetUniversalMaxDuration()
-	local maxDuration = 0
-
-	do
-		local base = SND_DURATIONS[5]
-		local rank = GetTalentRankByName("Improved Blade Tactics")
-		local bonus = rank * 0.15
-		maxDuration = math.max(maxDuration, base * (1 + bonus))
-	end
-
-	if activeTalents.tasteForBlood then
-		local base = RUPTURE_DURATIONS[5]
-		local rank = GetTalentRankByName("Taste for Blood")
-		maxDuration = math.max(maxDuration, base + (rank * 2))
-	end
-
-	if activeTalents.envenom then
-		maxDuration = math.max(maxDuration, ENVENOM_DURATIONS[5])
-	end
-
-	if activeTalents.improvedExpose then
-		maxDuration = math.max(maxDuration, EXPOSE_ARMOR_DURATION)
-	end
-
-	return maxDuration
 end
 
 local function GetExposeArmorTimeLeftForTarget()
@@ -616,7 +611,7 @@ local function UpdateDisplay()
 		trackers.expose.frame:SetPoint("TOP", prevFrame, "BOTTOM", 0, -spacing)
 	end
 	
-	local universalMaxDuration = GetUniversalMaxDuration()
+	local universalMaxDuration = activeTalents.universalMaxDuration or 0
 	
 	if comboPoints > 0 and hasEnemy then
 		local potentialDuration = CalculatePotentialDuration(comboPoints)
@@ -881,6 +876,8 @@ local function OnEvent()
 			end
 		end
 		
+		UpdateTalentState()
+		
 		trackers.snd.frame:ClearAllPoints()
 		ApplyLayoutSettings()
 
@@ -893,7 +890,7 @@ local function OnEvent()
 		trackers.expose.frame:ClearAllPoints()
 		trackers.expose.frame:SetPoint("TOP", trackers.envenom.frame, "BOTTOM", 0, -(LateralDB.frameSpacing or FRAME_SPACING))
 		LatPrint("Lateral loaded. Type /lat to open settings.")
-		
+
 	elseif event == "LEARNED_SPELL_IN_TAB" or "PLAYER_ENTER_COMBAT" then
 		UpdateTalentState()
 		if LateralDB then UpdateDisplay() end
@@ -911,6 +908,7 @@ frame:RegisterEvent("CHAT_MSG_COMBAT_HOSTILE_DEATH")
 frame:RegisterEvent("CHAT_MSG_COMBAT_HONOR_GAIN")
 frame:RegisterEvent("PLAYER_COMBO_POINTS")
 frame:SetScript("OnEvent", OnEvent)
+frame:SetScript("OnUpdate", Lateral_OnUpdate)
 
 -- Slash commands
 SLASH_LATERAL1 = "/lat"
