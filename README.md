@@ -23,7 +23,7 @@ Additionally
 * Taste for Blood shows the damage increase of your active buff 
 * Expose Armor will only show a potential bar with 5CP
 * Tracker bars are only active when their respective talents are active (except SnD)
-* Tricks of the Trade, Relentless Strikes, Dispatch (T3.5 2pc), Nightblade (T3.5 5pc) are tracked.
+* Tricks of the Trade, Relentless Strikes, Dispatch (T3.5 2pc), Nightblade (T3.5 5pc), Kiss if the Spider effect are tracked.
 
 Slash commands:
 **/lateral** or **/lat**
