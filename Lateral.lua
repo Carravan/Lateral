@@ -49,7 +49,8 @@ local powaSurrogate = {
 	[28777] = "Interface\\Icons\\INV_Trinket_Naxxramas03",
 	[26480] = "Interface\\Icons\\INV_Misc_AhnQirajTrinket_04",
 	[51145] = "Interface\\Icons\\INV_Misc_StoneTablet_02",
-	[23726] = "Interface\\Icons\\Spell_Totem_WardOfDraining"
+	[23726] = "Interface\\Icons\\Spell_Totem_WardOfDraining",
+	[13877] = "Interface\\Icons\\Ability_Warrior_PunishingBlow"
 }
 
 local defaultSettings = {
@@ -298,7 +299,7 @@ end
 
 local function HasActiveProcs()
 	for _, meta in pairs(procIcons) do
-		if meta.ends and (meta.ends - GetTime()) > 0 then
+		if (meta.ends and (meta.ends - GetTime()) > 0) or meta.binaryActive then
 			return true
 		end
 	end
@@ -310,7 +311,7 @@ local function DrawProcIcon(key)
 	if meta and meta.frame then return meta end
 
 	local size = (LateralDB and LateralDB.procIconSize) or DEFAULT_PROC_ICON_SIZE
-	local f = CreateFrame("Frame", nil, trackers.snd.frame)
+	local f = CreateFrame("Frame", nil, LateralTrackerFrame)
 	f:SetWidth(size)
 	f:SetHeight(size)
 	f:SetFrameStrata("MEDIUM")
@@ -350,7 +351,7 @@ local function LayoutProcIcons()
 	local now = GetTime()
 	local activeKeys = {}
 	for key, meta in pairs(procIcons) do
-		if meta and meta.ends and (meta.ends - now) > 0 then
+		if meta and ((meta.ends and (meta.ends - now) > 0) or meta.binaryActive) then
 			table.insert(activeKeys, key)
 		end
 	end
@@ -360,13 +361,29 @@ local function LayoutProcIcons()
 	for i = 1, table.getn(activeKeys) do
 		local key = activeKeys[i]
 		local meta = procIcons[key]
-		if meta and meta.frame and meta.ends and (meta.ends - GetTime()) > 0 then
+		if meta and meta.frame and ((meta.ends and (meta.ends - GetTime()) > 0) or meta.binaryActive) then
 			meta.frame:ClearAllPoints()
 			meta.frame:SetPoint("BOTTOMLEFT", trackers.snd.frame, "TOPLEFT", index * (size + spacing), spacing)
 			meta.frame:Show()
 			index = index + 1
 		end
 	end
+end
+
+local function SetBinaryProcActive(key, active)
+	local meta = DrawProcIcon(key)
+	meta.binaryActive = active and true or false
+	-- Ensure no timer or stacks are shown for binary icons
+	meta.starts = 0
+	meta.ends = 0
+	if meta.timeText then meta.timeText:SetText("") end
+	if meta.stackText then meta.stackText:SetText(""); meta.stackText:Hide() end
+	if meta.binaryActive then
+		meta.frame:Show()
+	else
+		if meta.frame then meta.frame:Hide() end
+	end
+	LayoutProcIcons()
 end
 
 local function ResizeProcIcons()
@@ -500,6 +517,11 @@ local function UpdateProcIcons()
 					meta.stackText:Show()
 				end
 			end
+			meta.frame:Show()
+		elseif meta.binaryActive then
+			-- Binary procs: show icon without timer or stacks
+			if meta.timeText then meta.timeText:SetText("") end
+			if meta.stackText then meta.stackText:SetText(""); meta.stackText:Hide() end
 			meta.frame:Show()
 		else
 			if meta.frame then meta.frame:Hide() end
@@ -922,7 +944,7 @@ local function UpdateDisplay()
 		trackers.expose.activeText:SetText("")
 	end
 	
-	if shouldShowBars or hasProcs then
+	if shouldShowBars then
 		trackers.snd.frame:Show()
 		if activeTalents.tasteForBlood then trackers.tfb.frame:Show() else trackers.tfb.frame:Hide() end
 		if activeTalents.envenom then trackers.envenom.frame:Show() else trackers.envenom.frame:Hide() end
@@ -1022,6 +1044,12 @@ local function OnEvent()
 					StartOrRefreshProc(spellId, GetTime() + dur, rule)
 				end
 			end
+			
+			-- Blade Flurry (show proc icon while active)
+			if spellId == 13877 and playerGUID and casterGUID == playerGUID then
+				-- Binary state: active until manually cancelled/fades
+				SetBinaryProcActive(13877, true)
+			end
 		end
 	elseif event == "CHAT_MSG_SPELL_SELF_DAMAGE" then
 		-- Detect Expose Armor failures and cancel the last started timer
@@ -1060,6 +1088,8 @@ local function OnEvent()
 				if meta.stackText then meta.stackText:SetText(""); meta.stackText:Hide() end
 				LayoutProcIcons()
 			end
+		elseif arg1 == "Blade Flurry fades from you." then
+			SetBinaryProcActive(13877, false)
 		end
 		
 	elseif event == "CHAT_MSG_COMBAT_HOSTILE_DEATH" or event == "CHAT_MSG_COMBAT_HONOR_GAIN" then
@@ -1097,6 +1127,21 @@ local function OnEvent()
 		trackers.expose.frame:ClearAllPoints()
 		trackers.expose.frame:SetPoint("TOP", trackers.envenom.frame, "BOTTOM", 0, -(LateralDB.frameSpacing or FRAME_SPACING))
 		LatPrint("Lateral loaded. Type /lat to open settings.")
+		
+		-- Initial scan for Blade Flurry buff to set current state
+		do
+			local buffIndex = 0
+			while true do
+				local index = GetPlayerBuff(buffIndex, "HELPFUL")
+				if index < 0 then break end
+				local buffName = GetBuffName(index) -- returns name, text; name sufficient here
+				if buffName == "Blade Flurry" then
+					SetBinaryProcActive(13877, true)
+					break
+				end
+				buffIndex = buffIndex + 1
+			end
+		end
 
 	elseif event == "LEARNED_SPELL_IN_TAB" or "PLAYER_ENTER_COMBAT" then
 		UpdateTalentState()
