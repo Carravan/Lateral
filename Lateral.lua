@@ -31,9 +31,9 @@ local TRACKED_PROCCS = {
 	[52561] = 6, --T3.5 3pc
 	[52563] = 6, --T3.5 5pc
 	[28866] = 15, --Kiss of the Spider
-	[29604] = { duration = 20, stack = { base = 65, step = 65, every = 2 } }, --Jom Gabbar
+	[29602] = { duration = 20, stack = { base = 65, step = 65, every = 2 } }, --Jom Gabbar
 	[28777] = 20, --Slayer's Crest
-	[26480] = { duration = 30, stack = { procCount = 26481} }, --Badge of the Swarmguard
+	[26480] = { duration = 30, stack = { procCount = 26481, max = 6} }, --Badge of the Swarmguard
 	[51145] = 3, --Shieldrender Talisman
 	[23726] = 20 --Venomous Totem
 }
@@ -44,7 +44,7 @@ local powaSurrogate = {
 	[52561] = "Interface\\Icons\\Ability_Rogue_SliceDice",
 	[52563] = "Interface\\Icons\\Spell_Shadow_Curse",
 	[28866] = "Interface\\Icons\\INV_Trinket_Naxxramas04",
-	[29604] = "Interface\\Icons\\INV_Misc_EngGizmos_19",
+	[29602] = "Interface\\Icons\\INV_Misc_EngGizmos_19",
 	[28777] = "Interface\\Icons\\INV_Trinket_Naxxramas03",
 	[26480] = "Interface\\Icons\\INV_Misc_AhnQirajTrinket_04",
 	[51145] = "Interface\\Icons\\INV_Misc_StoneTablet_02",
@@ -396,9 +396,12 @@ local function IncrementProcStacksForSpellId(appliedSpellId)
 		if meta and meta.stackRule and meta.stackRule.procCount and meta.stackRule.procCount == appliedSpellId then
 			if meta.ends and (meta.ends - now) > 0 then
 				local count = tonumber(meta.stacks or 0) or 0
-				meta.stacks = count + 1
+				local nextCount = count + 1
+				local maxv = tonumber(meta.stackRule.max or 0) or 0
+				if maxv > 0 and nextCount > maxv then nextCount = maxv end
+				meta.stacks = nextCount
 				if meta.stackText then
-					meta.stackText:SetText(tostring(meta.stacks))
+					meta.stackText:SetText(tostring(nextCount))
 					meta.stackText:Show()
 				end
 			end
@@ -413,6 +416,8 @@ local function ComputeProcStacks(meta, now)
 	
 	if rule.procCount then
 		local current = tonumber(meta.stacks or 0) or 0
+		local maxv = tonumber(rule.max or 0) or 0
+		if maxv > 0 and current > maxv then current = maxv end
 		return current
 	end
 
@@ -432,6 +437,11 @@ local function ComputeProcStacks(meta, now)
 		if ticks > totalTicks then ticks = totalTicks end
 	end
 	local total = base + (ticks * step)
+	-- Optional absolute cap
+	if rule.max then
+		local maxv = tonumber(rule.max)
+		if maxv and total > maxv then total = maxv end
+	end
 	
 	return total
 end
