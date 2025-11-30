@@ -4,7 +4,7 @@ Turtle WoW Rogue timer tracker, vaguely inspired by Cutup/Julienne.
 
 SuperWoW is used for the addon to remain mostly functional at buffcap.
 
-<img width="308" height="182" alt="image" src="https://github.com/user-attachments/assets/759eb8d9-20c9-4025-9842-87395112740b" />
+<img width="286" height="178" alt="image" src="https://github.com/user-attachments/assets/04d50af0-b543-457a-bbaf-992d2fe0ed99" />
 
 Lateral will show bars which represent
 * Slice and Dice
@@ -22,6 +22,7 @@ Additionally
 * Taste for Blood shows the damage increase of your active buff and the duration of Rupture on your target if landed.
 * Expose Armor will only show a potential bar with 5CP
 * Tracker bars are only active when their respective talents are active (except SnD)
+* Display your Blade Flurry status
 
 Tracked tier sets and trinkets
 * Dispatch (T3.5 2pc)
