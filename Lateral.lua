@@ -28,9 +28,14 @@ local EXPOSE_ARMOR_RANKS = {8647, 8649, 8650, 11197, 11198}
 
 local TRACKED_BUFFS = {"Tricks of the Trade", "Relentless Strikes"}
 local TRACKED_PROCCS = {
-	[52561] = 6,
-	[52563] = 6,
-	[28866] = 15
+	[52561] = 6, --T3.5 3pc
+	[52563] = 6, --T3.5 5pc
+	[28866] = 15, --Kiss of the Spider
+	[29604] = { duration = 20, stack = { base = 65, step = 65, every = 2 } }, --Jom Gabbar
+	[28777] = 20, --Slayer's Crest
+	[26480] = { duration = 30, stack = { procCount = 26481} }, --Badge of the Swarmguard
+	[51145] = 3, --Shieldrender Talisman
+	[23726] = 20 --Venomous Totem
 }
 
 local powaSurrogate = {
@@ -38,7 +43,12 @@ local powaSurrogate = {
 	["Relentless Strikes"] = "Interface\\Icons\\Ability_Warrior_DecisiveStrike",
 	[52561] = "Interface\\Icons\\Ability_Rogue_SliceDice",
 	[52563] = "Interface\\Icons\\Spell_Shadow_Curse",
-	[28866] = "Interface\\Icons\\INV_Trinket_Naxxramas04"
+	[28866] = "Interface\\Icons\\INV_Trinket_Naxxramas04",
+	[29604] = "Interface\\Icons\\INV_Misc_EngGizmos_19",
+	[28777] = "Interface\\Icons\\INV_Trinket_Naxxramas03",
+	[26480] = "Interface\\Icons\\INV_Misc_AhnQirajTrinket_04",
+	[51145] = "Interface\\Icons\\INV_Misc_StoneTablet_02",
+	[23726] = "Interface\\Icons\\Spell_Totem_WardOfDraining"
 }
 
 local defaultSettings = {
@@ -296,7 +306,7 @@ local function HasActiveProcs()
 	return false
 end
 
-local function EnsureProcIcon(key)
+local function DrawProcIcon(key)
 	local meta = procIcons[key]
 	if meta and meta.frame then return meta end
 
@@ -325,7 +335,7 @@ local function EnsureProcIcon(key)
 	stackText:SetText("")
 	stackText:SetDrawLayer("OVERLAY", 4)
 
-	procIcons[key] = { frame = f, texture = tex, timeText = timeText, stackText = stackText, starts = 0, ends = 0, stacks = nil, iconKey = key }
+	procIcons[key] = { frame = f, texture = tex, timeText = timeText, stackText = stackText, starts = 0, ends = 0, stacks = nil, stackRule = nil, iconKey = key }
 	return procIcons[key]
 end
 
@@ -379,18 +389,82 @@ local function ResizeProcIcons()
 	LayoutProcIcons()
 end
 
+local function IncrementProcStacksForSpellId(appliedSpellId)
+	if not appliedSpellId then return end
+	local now = GetTime()
+	for key, meta in pairs(procIcons) do
+		if meta and meta.stackRule and meta.stackRule.procCount and meta.stackRule.procCount == appliedSpellId then
+			if meta.ends and (meta.ends - now) > 0 then
+				local count = tonumber(meta.stacks or 0) or 0
+				meta.stacks = count + 1
+				if meta.stackText then
+					meta.stackText:SetText(tostring(meta.stacks))
+					meta.stackText:Show()
+				end
+			end
+		end
+	end
+end
+
+-- Helper to compute dynamic stacks based on a rule table
+local function ComputeProcStacks(meta, now)
+	if not meta or not meta.stackRule then return meta and meta.stacks end
+	local rule = meta.stackRule
+	
+	if rule.procCount then
+		local current = tonumber(meta.stacks or 0) or 0
+		return current
+	end
+
+	local base = tonumber(rule.base) or 0
+	local step = tonumber(rule.step) or 0
+	local every = tonumber(rule.every) or 0
+	local elapsed = (now or GetTime()) - (meta.starts or GetTime())
+	if elapsed < 0 then elapsed = 0 end
+	local ticks = 0
+	if every > 0 then
+		ticks = math.floor(elapsed / every)
+	end
+	
+	if meta.starts and meta.ends and every > 0 then
+		local totalTicks = math.floor(((meta.ends - meta.starts) / every) + 0.0001)
+		if totalTicks < 0 then totalTicks = 0 end
+		if ticks > totalTicks then ticks = totalTicks end
+	end
+	local total = base + (ticks * step)
+	
+	return total
+end
+
 -- Deterministic: start or refresh a proc by key with an absolute end time
-local function StartOrRefreshProc(key, absoluteEnds, stacks)
+local function StartOrRefreshProc(key, absoluteEnds, stacksOrRule)
 	if not key or not absoluteEnds then return end
-	local meta = EnsureProcIcon(key)
+	local meta = DrawProcIcon(key)
 	meta.starts = GetTime()
 	meta.ends = absoluteEnds
-	meta.stacks = stacks
+	-- Accept either a numeric stacks value or a rule table
+	meta.stackRule = nil
+	if type(stacksOrRule) == "table" then
+		meta.stackRule = stacksOrRule
+		-- initialize stacks from rule (counter rules start at 0)
+		if meta.stackRule.procCount then
+			meta.stacks = 0
+		else
+			meta.stacks = ComputeProcStacks(meta, GetTime())
+		end
+	else
+		meta.stacks = stacksOrRule
+	end
 	meta.texture:SetTexture(GetProcIconPath(key))
-	if stacks and tonumber(stacks) then
-		local s = tonumber(stacks)
+	if meta.stackRule then
+		local s = ComputeProcStacks(meta, GetTime())
+		if s then s = math.floor(tonumber(s) + 0.5) end
+		meta.stackText:SetText(tostring(s or ""))
+		meta.stackText:Show()
+	elseif meta.stacks and tonumber(meta.stacks) then
+		local s = tonumber(meta.stacks)
 		if s then s = math.floor(s + 0.5) end
-		meta.stackText:SetText(tostring(s or stacks))
+		meta.stackText:SetText(tostring(s or meta.stacks))
 		meta.stackText:Show()
 	else
 		meta.stackText:SetText("")
@@ -408,6 +482,15 @@ local function UpdateProcIcons()
 			local remain = meta.ends - now
 			if remain < 0 then remain = 0 end
 			meta.timeText:SetText(string.format("%.1f", remain))
+			-- Update dynamic stacks, if any
+			if meta.stackRule then
+				local s = ComputeProcStacks(meta, now)
+				if s then
+					s = math.floor(tonumber(s) + 0.5)
+					meta.stackText:SetText(tostring(s))
+					meta.stackText:Show()
+				end
+			end
 			meta.frame:Show()
 		else
 			if meta.frame then meta.frame:Hide() end
@@ -849,6 +932,11 @@ local function OnEvent()
 				Lateral.pendingExpose = { guid = targetGUID, applyAt = GetTime() + delay }
 			end
 			
+			-- Count proc applications to player for counter-based rules
+			if targetGUID and playerGUID and targetGUID == playerGUID then
+				IncrementProcStacksForSpellId(spellId)
+			end
+			
 			-- Slice and Dice
 			if has_value(SND_RANKS, spellId) and playerGUID and casterGUID == playerGUID then
 				local cpUsed = GetComboPointsUsed() or 0
@@ -887,8 +975,14 @@ local function OnEvent()
 			
 			-- T3.5 proccs
 			if TRACKED_PROCCS[spellId] and playerGUID and casterGUID == playerGUID then
-				--local procDurationSeconds = TRACKED_PROCCS[spellId]
-				StartOrRefreshProc(spellId, GetTime() + TRACKED_PROCCS[spellId], nil)
+				local cfg = TRACKED_PROCCS[spellId]
+				if type(cfg) == "number" then
+					StartOrRefreshProc(spellId, GetTime() + cfg, nil)
+				elseif type(cfg) == "table" then
+					local dur = tonumber(cfg.duration) or 0
+					local rule = cfg.stack or cfg.stacks
+					StartOrRefreshProc(spellId, GetTime() + dur, rule)
+				end
 			end
 		end
 	elseif event == "CHAT_MSG_SPELL_SELF_DAMAGE" then
