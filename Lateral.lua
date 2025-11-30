@@ -14,6 +14,7 @@ local DEFAULT_PROC_ICON_SPACING = 5
 local DEFAULT_POS_X = 0
 local DEFAULT_POS_Y = -148
 local RUPTURE_BAR_HEIGHT = 2
+local BAR_TEXTURE = "Interface\\AddOns\\Lateral\\Flat.tga"
 
 local SND_DURATIONS = {9, 12, 15, 18, 21}
 local SND_RANKS = {5171, 6774}
@@ -64,7 +65,8 @@ local defaultSettings = {
 	procIconSpacing = DEFAULT_PROC_ICON_SPACING,
 	framePosX = DEFAULT_POS_X,
 	framePosY = DEFAULT_POS_Y,
-	ruptureBarHeight = RUPTURE_BAR_HEIGHT
+	ruptureBarHeight = RUPTURE_BAR_HEIGHT,
+	barTexture = BAR_TEXTURE
 }
 
 local activeTalents = {
@@ -197,7 +199,7 @@ end
 local function CreateStatusBar(parent, color, frameLevel)
 	local bar = CreateFrame("StatusBar", nil, parent)
 	bar:SetAllPoints(parent)
-	bar:SetStatusBarTexture("Interface\\AddOns\\Lateral\\Flat.tga")
+	bar:SetStatusBarTexture((LateralDB and LateralDB.barTexture) or BAR_TEXTURE)
 	bar:SetStatusBarColor(unpack(color))
 	bar:SetMinMaxValues(0, 100)
 	bar:SetValue(0)
@@ -256,13 +258,11 @@ trackers.tfb.activeText = CreateTextElement(trackers.tfb.activeBar, "LEFT", 5, {
 trackers.tfb.centerText = CreateTextElement(trackers.tfb.activeBar, "CENTER", 0, {1, 1, 1, 1}, 16, "OUTLINE")
 -- Create Rupture (target debuff) thin bar under TFB
 trackers.tfb.ruptureBar = CreateFrame("StatusBar", nil, trackers.tfb.frame)
-trackers.tfb.ruptureBar:SetStatusBarTexture("Interface\\AddOns\\Lateral\\Flat.tga")
 trackers.tfb.ruptureBar:SetMinMaxValues(0, 100)
 trackers.tfb.ruptureBar:SetValue(0)
 trackers.tfb.ruptureBar:ClearAllPoints()
 trackers.tfb.ruptureBar:SetPoint("BOTTOMLEFT", trackers.tfb.frame, "BOTTOMLEFT", 0, 0)
 trackers.tfb.ruptureBar:SetPoint("BOTTOMRIGHT", trackers.tfb.frame, "BOTTOMRIGHT", 0, 0)
-trackers.tfb.ruptureBar:SetHeight(2)
 trackers.tfb.ruptureBar:SetFrameLevel(trackers.tfb.activeBar:GetFrameLevel() + 1)
 trackers.tfb.ruptureBar:Hide()
 
@@ -577,6 +577,28 @@ local function ApplyLayoutSettings()
 	ResizeProcIcons()
 end
 
+-- Explicitly re-apply the configured texture to all status bars
+local function ApplyTextureToAllBars()
+	if not LateralDB then return end
+	local tex = LateralDB.barTexture or BAR_TEXTURE
+	if trackers and trackers.snd then
+		if trackers.snd.potentialBar then trackers.snd.potentialBar:SetStatusBarTexture(tex) end
+		if trackers.snd.activeBar then trackers.snd.activeBar:SetStatusBarTexture(tex) end
+	end
+	if trackers and trackers.tfb then
+		if trackers.tfb.potentialBar then trackers.tfb.potentialBar:SetStatusBarTexture(tex) end
+		if trackers.tfb.activeBar then trackers.tfb.activeBar:SetStatusBarTexture(tex) end
+	end
+	if trackers and trackers.envenom then
+		if trackers.envenom.potentialBar then trackers.envenom.potentialBar:SetStatusBarTexture(tex) end
+		if trackers.envenom.activeBar then trackers.envenom.activeBar:SetStatusBarTexture(tex) end
+	end
+	if trackers and trackers.expose then
+		if trackers.expose.potentialBar then trackers.expose.potentialBar:SetStatusBarTexture(tex) end
+		if trackers.expose.activeBar then trackers.expose.activeBar:SetStatusBarTexture(tex) end
+	end
+end
+
 local function CalculatePotentialDuration(comboPoints)
 	if not comboPoints or comboPoints == 0 then
 		return 0
@@ -805,11 +827,12 @@ local function UpdateDisplay()
 				local rbHeight = (LateralDB and tonumber(LateralDB.ruptureBarHeight or RUPTURE_BAR_HEIGHT))
 				if rbHeight > 0 then 
 					trackers.tfb.ruptureBar:SetMinMaxValues(0, universalMaxDuration)
-					LatPrint(string.format("DEBUG RUPTURE: %s", tostring(ruptureTimeLeft)))
-					if ruptureTimeLeft > 3  then 
+					if ruptureTimeLeft > 2  then 
 						trackers.tfb.ruptureBar:SetStatusBarColor(1, 1, 1, 1)
+						trackers.tfb.ruptureBar:SetStatusBarTexture("Interface\\AddOns\\Lateral\\Flat.tga")
 					else
 						trackers.tfb.ruptureBar:SetStatusBarColor(0, 1, 0, 1)
+						trackers.tfb.ruptureBar:SetStatusBarTexture("Interface\\AddOns\\Lateral\\Solid.tga")
 					end
 					trackers.tfb.ruptureBar:SetValue(ruptureTimeLeft)
 					trackers.tfb.ruptureBar:Show()
@@ -1117,6 +1140,7 @@ local lateralMenuArray = {
 	{text = "Frame Spacing", editbox = { key = "frameSpacing" }, tooltip = "Set spacing between bars"},
 	{text = "Text Size", editbox = { key = "fontSize" }, tooltip = "Set text size for all bar texts"},
 	{text = "Rupture Bar Height", editbox = { key = "ruptureBarHeight" }, tooltip = "Set Rupture bar height (0 hides)"},
+	{text = "Bar Texture Path", editbox = { key = "barTexture" }, tooltip = "Set status bar texture path"},
 	{text = "",},
 	{text = "Proc Icon Size", editbox = { key = "procIconSize" }, tooltip = "Set size of proc textures"},
 	{text = "Proc Timer Text Size", editbox = { key = "procTimerFontSize" }, tooltip = "Set font size for proc timer"},
@@ -1167,15 +1191,21 @@ local function Lateral_InitializeEditBox()
 	f.e:SetScript("OnEnterPressed", function()
 		this:ClearFocus()
 		if this.key and LateralDB then
-			local num = tonumber(this:GetText())
-			if num then
-				LateralDB[this.key] = num
-				ApplyLayoutSettings()
-				Lateral_OptionChange()
+			if this.key == "barTexture" then
+				local txt = this:GetText() or ""
+				LateralDB.barTexture = txt
+				ApplyTextureToAllBars()
 			else
-				-- restore current stored value if input invalid
-				if LateralDB[this.key] ~= nil then
-					this:SetText(tostring(LateralDB[this.key]))
+				local num = tonumber(this:GetText())
+				if num then
+					LateralDB[this.key] = num
+					ApplyLayoutSettings()
+					Lateral_OptionChange()
+				else
+					-- restore current stored value if input invalid
+					if LateralDB[this.key] ~= nil then
+						this:SetText(tostring(LateralDB[this.key]))
+					end
 				end
 			end
 		end
