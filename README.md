@@ -4,7 +4,7 @@ Turtle WoW Rogue timer tracker, vaguely inspired by Cutup/Julienne.
 
 SuperWoW is used for the addon to remain mostly functional at buffcap.
 
-<img width="286" height="178" alt="image" src="https://github.com/user-attachments/assets/04d50af0-b543-457a-bbaf-992d2fe0ed99" />
+<img width="309" height="182" alt="image" src="https://github.com/user-attachments/assets/8df1e745-68ba-42ee-b392-bdeec20ef564" />
 
 Lateral will show bars which represent
 * Slice and Dice
