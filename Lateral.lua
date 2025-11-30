@@ -257,7 +257,6 @@ trackers.tfb.centerText = CreateTextElement(trackers.tfb.activeBar, "CENTER", 0,
 -- Create Rupture (target debuff) thin bar under TFB
 trackers.tfb.ruptureBar = CreateFrame("StatusBar", nil, trackers.tfb.frame)
 trackers.tfb.ruptureBar:SetStatusBarTexture("Interface\\AddOns\\Lateral\\Flat.tga")
-trackers.tfb.ruptureBar:SetStatusBarColor(1, 1, 1, 1)
 trackers.tfb.ruptureBar:SetMinMaxValues(0, 100)
 trackers.tfb.ruptureBar:SetValue(0)
 trackers.tfb.ruptureBar:ClearAllPoints()
@@ -804,8 +803,14 @@ local function UpdateDisplay()
 			-- Rupture landed bar
 			if ruptureActive and ruptureTimeLeft > 0 and trackers.tfb.ruptureBar then
 				local rbHeight = (LateralDB and tonumber(LateralDB.ruptureBarHeight or RUPTURE_BAR_HEIGHT))
-				if rbHeight > 0 then
+				if rbHeight > 0 then 
 					trackers.tfb.ruptureBar:SetMinMaxValues(0, universalMaxDuration)
+					LatPrint(string.format("DEBUG RUPTURE: %s", tostring(ruptureTimeLeft)))
+					if ruptureTimeLeft > 3  then 
+						trackers.tfb.ruptureBar:SetStatusBarColor(1, 1, 1, 1)
+					else
+						trackers.tfb.ruptureBar:SetStatusBarColor(0, 1, 0, 1)
+					end
 					trackers.tfb.ruptureBar:SetValue(ruptureTimeLeft)
 					trackers.tfb.ruptureBar:Show()
 				else
