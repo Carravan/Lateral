@@ -36,7 +36,10 @@ local TRACKED_PROCCS = {
 	[28777] = 20, --Slayer's Crest
 	[26480] = { duration = 30, stack = { procCount = 26481, max = 6} }, --Badge of the Swarmguard
 	[51145] = 3, --Shieldrender Talisman
-	[23726] = 20 --Venomous Totem
+	[23726] = 20, --Venomous Totem
+	[13750] = 15, --Adrenaline Rush
+	[45425] = 30, --Potion of Quickness
+	[16322] = 20, --Juju Flurry
 }
 
 local powaSurrogate = {
@@ -50,7 +53,10 @@ local powaSurrogate = {
 	[26480] = "Interface\\Icons\\INV_Misc_AhnQirajTrinket_04",
 	[51145] = "Interface\\Icons\\INV_Misc_StoneTablet_02",
 	[23726] = "Interface\\Icons\\Spell_Totem_WardOfDraining",
-	[13877] = "Interface\\Icons\\Ability_Warrior_PunishingBlow"
+	[13877] = "Interface\\Icons\\Ability_Warrior_PunishingBlow",
+	[13750] = "Interface\\Icons\\Spell_Shadow_ShadowWordDominate",
+	[45425] = "Interface\\Icons\\INV_Potion_08",
+	[16322] = "Interface\\Icons\\INV_Misc_MonsterScales_17"
 }
 
 local defaultSettings = {
