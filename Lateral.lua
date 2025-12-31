@@ -40,6 +40,8 @@ local TRACKED_PROCCS = {
 	[13750] = 15, --Adrenaline Rush
 	[45425] = 30, --Potion of Quickness
 	[16322] = 20, --Juju Flurry
+	[26635] = 10, --Berserking
+	[5277] = 15 --Evasion
 }
 
 local powaSurrogate = {
@@ -56,7 +58,9 @@ local powaSurrogate = {
 	[13877] = "Interface\\Icons\\Ability_Warrior_PunishingBlow",
 	[13750] = "Interface\\Icons\\Spell_Shadow_ShadowWordDominate",
 	[45425] = "Interface\\Icons\\INV_Potion_08",
-	[16322] = "Interface\\Icons\\INV_Misc_MonsterScales_17"
+	[16322] = "Interface\\Icons\\INV_Misc_MonsterScales_17",
+	[26635] = "Interface\\Icons\\Racial_Troll_Berserk",
+	[5277] = "Interface\\Icons\\Spell_Shadow_ShadowWard"
 }
 
 local defaultSettings = {
