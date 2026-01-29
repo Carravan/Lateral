@@ -396,6 +396,20 @@ local function SetBinaryProcActive(key, active)
 	LayoutProcIcons()
 end
 
+local function ResetAllProcIcons()
+	for _, meta in pairs(procIcons) do
+		meta.starts = 0
+		meta.ends = 0
+		meta.stacks = nil
+		meta.stackRule = nil
+		meta.binaryActive = false
+		if meta.timeText then meta.timeText:SetText("") end
+		if meta.stackText then meta.stackText:SetText(""); meta.stackText:Hide() end
+		if meta.frame then meta.frame:Hide() end
+	end
+	LayoutProcIcons()
+end
+
 local function ResizeProcIcons()
 	local size = (LateralDB and LateralDB.procIconSize) or DEFAULT_PROC_ICON_SIZE
 	local timerFont = (LateralDB and LateralDB.procTimerFontSize) or DEFAULT_PROC_TIMER_FONT_SIZE
@@ -692,6 +706,15 @@ local function GetRuptureTimeLeftForTarget()
     return 0, false
 end
 
+local function GetRemainingFromTimer(timer)
+	if not timer or not timer.ends then return 0 end
+	local remaining = timer.ends - GetTime()
+	if remaining > 0 then
+		return remaining
+	end
+	return 0
+end
+
 local function UpdateDisplay()
 
 	if not LateralDB then
@@ -972,6 +995,29 @@ function Lateral_UpdateDisplay()
 	UpdateDisplay()
 end
 
+-- Public functions for other addons/macros
+function LateralSnD()
+	return GetRemainingFromTimer(sndManualTimer)
+end
+
+function LateralRupture()
+	local remaining = GetRuptureTimeLeftForTarget()
+	return remaining or 0
+end
+
+function LateralEnvenom()
+	return GetRemainingFromTimer(envenomManualTimer)
+end
+
+function LateralIEA()
+	local remaining = GetExposeArmorTimeLeftForTarget()
+	return remaining or 0
+end
+
+function LateralCP()
+	return trackers.comboPoints or 0
+end
+
 -- Event handling
 local function OnEvent()
 	if event == "PLAYER_TARGET_CHANGED" then
@@ -981,6 +1027,10 @@ local function OnEvent()
 
 	elseif event == "PLAYER_COMBO_POINTS" then
 		RefreshComboPoints()
+		if LateralDB then UpdateDisplay() end
+
+	elseif event == "PLAYER_DEAD" then
+		ResetAllProcIcons()
 		if LateralDB then UpdateDisplay() end
 
 	elseif event == "UNIT_CASTEVENT" then
@@ -1169,6 +1219,7 @@ frame:RegisterEvent("CHAT_MSG_SPELL_AURA_GONE_SELF")
 frame:RegisterEvent("CHAT_MSG_COMBAT_HOSTILE_DEATH")
 frame:RegisterEvent("CHAT_MSG_COMBAT_HONOR_GAIN")
 frame:RegisterEvent("PLAYER_COMBO_POINTS")
+frame:RegisterEvent("PLAYER_DEAD")
 frame:SetScript("OnEvent", OnEvent)
 frame:SetScript("OnUpdate", Lateral_OnUpdate)
 
