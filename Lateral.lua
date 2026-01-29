@@ -1000,13 +1000,17 @@ function LateralSnD()
 	return GetRemainingFromTimer(sndManualTimer)
 end
 
-function LateralRupture()
-	local remaining = GetRuptureTimeLeftForTarget()
-	return remaining or 0
+function LateralTfB()
+	return GetRemainingFromTimer(tfbManualTimer)
 end
 
 function LateralEnvenom()
 	return GetRemainingFromTimer(envenomManualTimer)
+end
+
+function LateralRupture()
+	local remaining = GetRuptureTimeLeftForTarget()
+	return remaining or 0
 end
 
 function LateralIEA()
