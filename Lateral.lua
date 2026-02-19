@@ -1386,10 +1386,6 @@ handlers.ADDON_LOADED = function(self)
 	local _, class = UnitClass("player")
 	Lateral.state.playerClass = class
 
-	UpdateTalentState()
-	RefreshTargetState()
-	RefreshComboPoints()
-
 	trackers.snd.frame:ClearAllPoints()
 	ApplyLayoutSettings()
 	ApplyTextureToAllBars()
@@ -1440,6 +1436,7 @@ handlers.PLAYER_ENTERING_WORLD = function(self)
 	local _, class = UnitClass("player")
 	Lateral.state.playerClass = class
 	RunNamChecks()
+	UpdateTalentState()
 	RefreshTargetState()
 	RefreshComboPoints()
 	SyncPersistentProcsOnWorldEntry()
