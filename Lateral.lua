@@ -1439,10 +1439,10 @@ end
 handlers.PLAYER_ENTERING_WORLD = function(self)
 	local _, class = UnitClass("player")
 	Lateral.state.playerClass = class
+	RunNamChecks()
 	RefreshTargetState()
 	RefreshComboPoints()
 	SyncPersistentProcsOnWorldEntry()
-	RunNamChecks()
 end
 
 local function Lateral_OnEvent()
