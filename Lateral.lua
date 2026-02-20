@@ -51,7 +51,7 @@ local TRACKED_PROCCS = {
 	[16322] = {}, --Juju Flurry
 	[26635] = {}, --Berserking
 	[52540] = { showStacks = true, duration = 12 }, --Tricks of the Trade
-	[14181] = { showStacks = true, duration = 30 }, --Relentless Strikes
+	[14181] = { showStacks = true, duration = 30 } --Relentless Strikes
 }
 
 local powaSurrogate = {
