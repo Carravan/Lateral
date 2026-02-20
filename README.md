@@ -1,10 +1,10 @@
 # Lateral
+**This version is EOL, no updates are planned. You may open issues for bugs, but it will not receive new features.**
+
 Turtle WoW Rogue timer tracker, vaguely inspired by Cutup/Julienne.
-- [nampower](https://gitea.com/avitasia/nampower/releases) version 2.33 or higher is **REQUIRED**
+- [SuperWoW](https://github.com/balakethelock/SuperWoW) is **REQUIRED**
 
-**THIS VERSION DOES NOT YET SHIP THROUGH TWOW LAUNCHER, INSTALL MANUALLY**
-
-nampower is used for the addon to remain completely functional at buffcap.
+SuperWoW is used for the addon to remain mostly functional at buffcap.
 
 <img width="309" height="182" alt="image" src="https://github.com/user-attachments/assets/8df1e745-68ba-42ee-b392-bdeec20ef564" />
 
@@ -26,25 +26,22 @@ Additionally
 * Tracker bars are only active when their respective talents are active (except SnD)
 * Display your Blade Flurry status
 
-Tracked effects
+Tracked tier sets and trinkets
 * Dispatch (T3.5 2pc)
 * Nightblade (T3.5 5pc)
-* Tricks of the Trade
-* Relentless Strikes
 * Shieldrender Talisman
 * Kiss of the Spider
 * Slayer's Crest
 * Badge of the Swarmguard
 * Jom Gabbar
 * Venomous Totem
-* Sprint
-* Flourish
-* Molten Emberstone
 * Evasion
-* Adrenaline Rush
-* Potion of Quickness
-* Juju Flurry
-* Berserking
+* Sprint
+* Molten Emberstone
+
+At buffcap
+* All timers, bars, tier set proccs and trinkets will continue to work.
+* TotT, Relentless Strikes will fail.
 
 Slash commands:
 **/lateral** or **/lat**
