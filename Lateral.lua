@@ -45,8 +45,7 @@ local TRACKED_PROCCS = {
 	[2983] = 15, --Sprint
 	[8696] = 15, --Sprint
 	[11305] = 15, --Sprint
-	[45080] = 15, --Molten Emberstone
-	
+	[45080] = 15 --Molten Emberstone
 }
 
 local powaSurrogate = {
