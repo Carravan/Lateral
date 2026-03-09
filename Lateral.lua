@@ -51,7 +51,7 @@ local TRACKED_PROCCS = {
 	[16322] = {}, --Juju Flurry
 	[26635] = {}, --Berserking
 	[52540] = { showStacks = true, duration = 12 }, --Tricks of the Trade
-	[14181] = { showStacks = true, duration = 30 } --Relentless Strikes
+	[14181] = { showStacks = true, duration = 30 }, --Relentless Strikes
 }
 
 local powaSurrogate = {
@@ -1483,6 +1483,7 @@ local buttonheight = 16
 local lateralMenuArray = {
 	{text = "Enabled", toggle = "enabled", tooltip = "Enable/disable the tracker UI"},
 	{text = "Debug Logging", toggle = "debug", tooltip = "Toggle debug logging for UNIT_CASTEVENT"},
+	{text = "Test Config", action = "testConfiguration", tooltip = "Populate with active bars and procs"},
 	{text = "",},
 	{text = "Frame Width", editbox = { key = "frameWidth" }, tooltip = "Set bar width"},
 	{text = "Frame Height", editbox = { key = "frameHeight" }, tooltip = "Set bar height"},
@@ -1516,6 +1517,88 @@ local function Lateral_OptionChange()
 		ApplyBarColors()
 		UpdateDisplay()
 	end
+end
+
+local function Lateral_RunConfigurationTest()
+	if not LateralDB then return end
+
+	UpdateTalentState()
+
+	local now = GetTime()
+	local testGuid = "LATERAL_TEST_TARGET"
+	local cp = 5
+
+	Lateral.state.target.guid = testGuid
+	Lateral.state.target.hasEnemy = true
+	Lateral.state.previousComboPoints = cp
+	Lateral.state.comboPoints = cp
+	Lateral.state.lastComboPoints = cp
+	Lateral.state.pending.expose = nil
+	Lateral.state.pending.rupture = nil
+
+	local sndDuration = CalculatePotentialDuration(cp)
+	if sndDuration and sndDuration > 0 then
+		Lateral.state.timers.snd = {
+			starts = now - (sndDuration * 0.35),
+			ends = now + (sndDuration * 0.65)
+		}
+	end
+
+	if activeTalents.tasteForBlood then
+		local tfbDuration = CalculateTasteForBloodPotentialDuration(cp)
+		if tfbDuration and tfbDuration > 0 then
+			Lateral.state.timers.tfb = {
+				starts = now - (tfbDuration * 0.3),
+				ends = now + (tfbDuration * 0.7),
+				cp = cp
+			}
+			Lateral.state.timers.ruptureByGuid[testGuid] = {
+				starts = now - (tfbDuration * 0.2),
+				ends = now + (tfbDuration * 0.5)
+			}
+		end
+	else
+		Lateral.state.timers.tfb = nil
+		Lateral.state.timers.ruptureByGuid[testGuid] = nil
+	end
+
+	if activeTalents.envenom then
+		local envenomDuration = CalculateEnvenomPotentialDuration(cp)
+		if envenomDuration and envenomDuration > 0 then
+			Lateral.state.timers.envenom = {
+				starts = now - (envenomDuration * 0.25),
+				ends = now + (envenomDuration * 0.75)
+			}
+		end
+	else
+		Lateral.state.timers.envenom = nil
+	end
+
+	if activeTalents.improvedExpose then
+		Lateral.state.timers.exposeByGuid[testGuid] = {
+			starts = now - 6,
+			ends = now + (EXPOSE_ARMOR_DURATION - 6)
+		}
+	else
+		Lateral.state.timers.exposeByGuid[testGuid] = nil
+	end
+
+	ResetAllProcIcons()
+	local testProcIds = {11305, 45604, 29602, 26480, 52540}
+	for _, spellId in ipairs(testProcIds) do
+		local cfg = TRACKED_PROCCS[spellId]
+		if cfg then
+			local procDuration = (cfg.duration and tonumber(cfg.duration)) or 12
+			if procDuration <= 0 then procDuration = 12 end
+			StartOrRefreshProc(spellId, now + procDuration, cfg)
+			if ProcConfigUsesStacks(cfg) then
+				UpdateProcStacksByAura(spellId, 3)
+			end
+		end
+	end
+
+	UpdateProcIcons()
+	UpdateDisplay()
 end
 
 local function IsLayoutSettingKey(key)
@@ -1676,6 +1759,7 @@ local function Lateral_InitializeMenu()
 		fb.tooltip = val.tooltip
 		fb.editbox = val.editbox
 		fb.color = val.color
+		fb.action = val.action
 
 		if val.toggle then
 			fb.chk = CreateFrame("Frame","$parentCheckmark",fb)
@@ -1694,6 +1778,10 @@ local function Lateral_InitializeMenu()
 		fb:SetScript("OnClick", function()
 			if this.color and this.color.key then
 				Lateral_OpenColorPicker(this.color.key)
+				return
+			end
+			if this.action == "testConfiguration" then
+				Lateral_RunConfigurationTest()
 				return
 			end
 			if this.toggle and LateralDB then
