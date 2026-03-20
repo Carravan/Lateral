@@ -21,6 +21,7 @@ local SND_RANKS = {5171, 6774}
 
 local RUPTURE_DURATIONS = {8, 10, 12, 14, 16}
 local RUPTURE_RANKS = {1943, 8639, 8640, 11273, 11274, 11275}
+local TFB_BONUS = {4, 6}
 
 local ENVENOM_DURATIONS = {12, 16, 20, 24, 28}
 
@@ -220,7 +221,7 @@ local function UpdateTalentState()
 	if activeTalents.tasteForBlood then
 		local base = RUPTURE_DURATIONS[5]
 		local rank = activeTalents.tasteForBlood or 0
-		maxDuration = math.max(maxDuration, base + (rank * 2))
+		maxDuration = math.max(maxDuration, base + TFB_BONUS[rank])
 	end
 	if activeTalents.envenom then
 		maxDuration = math.max(maxDuration, ENVENOM_DURATIONS[5])
@@ -835,7 +836,7 @@ local function CalculateTasteForBloodPotentialDuration(comboPoints)
 	
 	local baseDuration = RUPTURE_DURATIONS[comboPoints]
 	local talentRank = activeTalents.tasteForBlood or 0
-	local talentBonus = talentRank * 2
+	local talentBonus = TFB_BONUS[talentRank]
 	local finalDuration = baseDuration + talentBonus
 	
 	return finalDuration
